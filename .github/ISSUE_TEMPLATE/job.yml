@@ -1,0 +1,35 @@
+name: New job
+description: Add something that needs doing. Admins' jobs go straight on the board; everyone else's go to Others for approval.
+labels: [proposal]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Give it a short title people can scan. Admin jobs are posted right away; anyone else's job shows up under **Others** until an admin approves it.
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+      description: What needs to be done, and what does "done" look like? Markdown works.
+    validations:
+      required: false
+  - type: dropdown
+    id: priority
+    attributes:
+      label: Priority
+      options:
+        - P0 · Urgent
+        - P1 · High
+        - P2 · Medium
+        - P3 · Low
+      default: 2
+    validations:
+      required: true
+  - type: input
+    id: due
+    attributes:
+      label: Due date
+      description: Optional. Format YYYY-MM-DD.
+      placeholder: "2026-10-31"
+    validations:
+      required: false

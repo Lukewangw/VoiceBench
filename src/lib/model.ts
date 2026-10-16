@@ -1,0 +1,114 @@
+import {
+  boardStatus,
+  isCommandOnly,
+  labelNames,
+  parseBody,
+  parseCommands,
+  priorityFromLabels,
+  stripCommands,
+  type BoardStatus,
+  type Command,
+  type PriorityKey,
+} from '../../shared/board.js'
+import type { RawComment, RawIssue, RawUser } from './github'
+
+export interface Person {
+  login: string
+  avatarUrl: string
+  url: string
+  isBot: boolean
+}
+
+export interface Job {
+  number: number
+  title: string
+  body: string
+  description: string
+  priority: PriorityKey | null
+  due: string | null
+  status: BoardStatus
+  author: Person
+  assignees: Person[]
+  labels: string[]
+  createdAt: string
+  updatedAt: string
+  closedAt: string | null
+  url: string
+}
+
+export interface Note {
+  id: number
+  issue: number
+  author: Person
+  body: string
+  /** The body without command lines. */
+  text: string
+  createdAt: string
+  url: string
+  commands: Command[]
+  commandOnly: boolean
+  /** The bot reacted with 😕: the command didn't go through. */
+  failed: boolean
+}
+
+export function toPerson(u: RawUser | null | undefined): Person {
+  const login = u?.login ?? 'ghost'
+  return {
+    login,
+    avatarUrl: u?.avatar_url ?? `https://github.com/${login}.png?size=64`,
+    url: u?.html_url ?? `https://github.com/${login}`,
+    isBot: u?.type === 'Bot' || login.endsWith('[bot]'),
+  }
+}
+
+export function toJob(raw: RawIssue): Job {
+  const fields = parseBody(raw.body)
+  return {
+    number: raw.number,
+    title: raw.title,
+    body: raw.body ?? '',
+    description: fields.description,
+    priority: priorityFromLabels(raw.labels) ?? fields.priority,
+    due: fields.due,
+    status: boardStatus(raw),
+    author: toPerson(raw.user),
+    assignees: (raw.assignees ?? []).map(toPerson),
+    labels: labelNames(raw.labels),
+    createdAt: raw.created_at,
+    updatedAt: raw.updated_at,
+    closedAt: raw.closed_at,
+    url: raw.html_url,
+  }
+}
+
+export function toNote(raw: RawComment): Note {
+  const body = raw.body ?? ''
+  return {
+    id: raw.id,
+    issue: raw.issue_number ?? Number(raw.issue_url?.split('/').pop()),
+    author: toPerson(raw.user),
+    body,
+    text: stripCommands(body),
+    createdAt: raw.created_at,
+    url: raw.html_url,
+    commands: parseCommands(body),
+    commandOnly: isCommandOnly(body),
+    failed: (raw.reactions?.confused ?? 0) > 0,
+  }
+}
+
+export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
+export const isOn = (job: Job, login: string | undefined) => !!login && job.assignees.some((a) => sameLogin(a.login, login))
+
+const RANK: Record<PriorityKey, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
+
+/** Priority first, then the nearest due date, then oldest first. */
+export function byPriority(a: Job, b: Job): number {
+  const pa = a.priority ? RANK[a.priority] : 9
+  const pb = b.priority ? RANK[b.priority] : 9
+  if (pa !== pb) return pa - pb
+  if (a.due !== b.due) return !a.due ? 1 : !b.due ? -1 : a.due < b.due ? -1 : 1
+  return a.number - b.number
+}
+
+export const byRecentlyClosed = (a: Job, b: Job) => (b.closedAt ?? '').localeCompare(a.closedAt ?? '')
