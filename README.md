@@ -80,8 +80,10 @@ Every job is an issue in this repository, so everything also works from GitHub:
 ## How it's built
 
 - **Data**: GitHub Issues. The `job` label means approved, `proposal` means waiting in Others, and `P0`–`P3`
-  is the priority. The due date lives in the issue body.
-- **Bot**: [`.github/workflows/board.yml`](.github/workflows/board.yml) runs on every issue and comment event.
+  is the priority. The due date lives in the issue body, under "Due date"; the board and the bot only ever
+  change that answer (or drop the form's Priority answer once it is a label) and leave all other text as written.
+- **Bot**: [`.github/workflows/board.yml`](.github/workflows/board.yml) runs on every issue and comment event,
+  with the newest commit whose tests passed (so does publishing).
   [`.github/scripts/triage.js`](.github/scripts/triage.js) files new issues and applies commands, then the site
   is rebuilt and published to GitHub Pages with a fresh snapshot of all issues
   ([`snapshot.js`](.github/scripts/snapshot.js)), so the page loads instantly for everyone.

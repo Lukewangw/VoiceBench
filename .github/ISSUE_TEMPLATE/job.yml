@@ -29,7 +29,7 @@ body:
     id: due
     attributes:
       label: Due date
-      description: Optional. Format YYYY-MM-DD.
+      description: Optional. 2026-10-31 works best; Oct 31, 10/31 and 10月31日 work too.
       placeholder: '2026-10-31'
     validations:
       required: false

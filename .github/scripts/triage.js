@@ -35,11 +35,16 @@ export default async function triage({ github, context, core }) {
   if (eventName === 'issues' && ['deleted', 'transferred'].includes(payload.action)) return
 
   const bot = createBot({ github, core, ...context.repo, number: issue.number })
-  if (eventName === 'issues' && payload.action === 'opened') return bot.fileNewIssue()
-  // A burst of events can skip an issue's "opened" run; any later event files it instead.
-  await bot.fileIfUnfiled()
-  if (eventName === 'issues' && payload.action === 'labeled') await bot.keepOnePriority(payload.label?.name)
-  if (eventName === 'issue_comment' && payload.action === 'created') await bot.runCommands(payload.comment)
+  if (eventName === 'issues' && payload.action === 'opened') await bot.fileNewIssue()
+  else {
+    // A burst of events can skip an issue's "opened" run; any later event files it instead.
+    await bot.fileIfUnfiled()
+    if (eventName === 'issues' && payload.action === 'labeled') await bot.keepOnePriority(payload.label?.name)
+  }
+  // A queued run is dropped when a newer one for the same issue arrives, so every run works through
+  // all of the issue's pending commands, whatever event brought it here.
+  const live = eventName === 'issue_comment' && ['created', 'edited'].includes(payload.action)
+  await bot.runCommands(live ? payload.comment : null)
 }
 
 // Commands older than this are left alone, so a stray old comment never gets replayed by surprise.
@@ -106,8 +111,22 @@ export function createBot({ github, core, owner, repo, number }) {
 
   const isAssigned = (issue, login) => (issue.assignees ?? []).some((a) => same(a.login, login))
 
-  const react = (comment, content) =>
-    github.rest.reactions.createForIssueComment({ owner, repo, comment_id: comment.id, content })
+  async function react(comment, content) {
+    try {
+      await github.rest.reactions.createForIssueComment({ owner, repo, comment_id: comment.id, content })
+    } catch (error) {
+      if (error.status !== 404) throw error // deleted meanwhile
+    }
+  }
+
+  async function getComment(id) {
+    try {
+      return (await github.rest.issues.getComment({ owner, repo, comment_id: id })).data
+    } catch (error) {
+      if (error.status === 404) return null // deleted
+      throw error
+    }
+  }
 
   // Answered means the bot already reacted with 👍 or 😕.
   async function answered(comment) {
@@ -157,34 +176,45 @@ export function createBot({ github, core, owner, repo, number }) {
 
   async function fileIfUnfiled() {
     const issue = await getIssue()
-    if (issue.state === 'open' && !hasLabel(issue.labels, JOB_LABEL) && !hasLabel(issue.labels, PROPOSAL_LABEL)) {
-      await fileNewIssue()
-    }
+    if (issue.state !== 'open') return
+    const unlabelled = !hasLabel(issue.labels, JOB_LABEL) && !hasLabel(issue.labels, PROPOSAL_LABEL)
+    // The form labels new issues "proposal" itself, so a Priority answer without a priority label
+    // is the other sign that filing never happened.
+    if (unlabelled || (!priorityFromLabels(issue.labels) && parseBody(issue.body).hasPriority)) await fileNewIssue()
   }
 
   async function keepOnePriority(added) {
     if (!added || !isPriorityLabel(added)) return
     const issue = await getIssue()
+    // Runs can start late: if a newer change already replaced this label, that one stays.
+    if (!hasLabel(issue.labels, added)) return
     await removeLabels(
       issue,
       PRIORITIES.map((p) => p.key).filter((key) => !same(key, added)),
     )
   }
 
-  /** Works through every unanswered command comment on the issue, oldest first. */
+  /**
+   * Works through every unanswered command comment on the issue, oldest first. `trigger` is the
+   * comment that started this run, if any: lists can lag a few seconds behind a new comment.
+   */
   async function runCommands(trigger) {
-    if (!trigger || isBot(trigger.user)) return
-    const since = new Date(Date.now() - PENDING_WINDOW_MS).toISOString()
+    const cutoff = Date.now() - PENDING_WINDOW_MS
+    const since = new Date(cutoff).toISOString()
     const recent = await github.paginate(github.rest.issues.listComments, { ...ref, since, per_page: 100 })
     const byId = new Map(recent.map((c) => [c.id, c]))
-    if (!byId.has(trigger.id)) byId.set(trigger.id, trigger)
+    if (trigger && !isBot(trigger.user) && !byId.has(trigger.id)) byId.set(trigger.id, trigger)
     const queue = [...byId.values()]
-      .filter((c) => !isBot(c.user) && parseCommands(c.body).length > 0)
+      // `since` goes by the last edit, so an old comment edited today shows up too; it stays old.
+      .filter((c) => Date.parse(c.created_at) >= cutoff && !isBot(c.user) && parseCommands(c.body).length > 0)
       .sort((a, b) => a.created_at.localeCompare(b.created_at) || a.id - b.id)
 
     let issue = await getIssue()
-    for (const comment of queue) {
-      if (!(await answered(comment))) issue = await handle(comment, issue)
+    for (const pending of queue) {
+      if (await answered(pending)) continue
+      // As it is now: it may have been edited, or deleted (then there's nothing to do).
+      const comment = await getComment(pending.id)
+      if (comment && !(await answered(comment))) issue = await handle(comment, issue)
     }
   }
 

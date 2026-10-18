@@ -31,6 +31,7 @@ function fakeGitHub(issue, { assignable = [ADMIN, MEMBER, 'bob'], events = [] } 
       reactions: {
         async createForIssueComment({ comment_id, content }) {
           const c = state.comments.find((x) => x.id === comment_id)
+          if (!c) throw fail(404)
           c.reactionList.push({ content, user: BOT })
           c.reactions[content] = (c.reactions[content] ?? 0) + 1
           state.reactions.push(content)
@@ -43,9 +44,15 @@ function fakeGitHub(issue, { assignable = [ADMIN, MEMBER, 'bob'], events = [] } 
       issues: {
         get: async () => ({ data: copy() }),
         listEvents: async () => ({ data: events }),
+        // Like GitHub, `since` goes by the last update.
         listComments: async ({ since }) => ({
-          data: structuredClone(state.comments.filter((c) => !since || c.created_at >= since)),
+          data: structuredClone(state.comments.filter((c) => !since || c.updated_at >= since)),
         }),
+        async getComment({ comment_id }) {
+          const c = state.comments.find((x) => x.id === comment_id)
+          if (!c) throw fail(404)
+          return { data: structuredClone(c) }
+        },
         listLabelsForRepo: async () => ({ data: state.repoLabels.map((name) => ({ name })) }),
         async createLabel({ name }) {
           state.repoLabels.push(name)
@@ -113,12 +120,19 @@ async function say(gh, login, body, { silent = false, minutesAgo = 0, user } = {
     reactions: { '+1': 0, confused: 0 },
     reactionList: [],
   }
+  comment.updated_at = comment.created_at
   gh.state.comments.push(comment)
   if (!silent) {
     const payload = { action: 'created', issue: gh.state.issue, comment: structuredClone(comment) }
     await triage({ github: gh.github, core: quiet, context: { eventName: 'issue_comment', repo, payload } })
   }
   return comment
+}
+
+/** Some other event on the issue (an edit, a label, an assignment...) runs the bot. */
+async function event(gh, eventName, action, extra = {}) {
+  const payload = { action, issue: structuredClone(gh.state.issue), ...extra }
+  await triage({ github: gh.github, core: quiet, context: { eventName, repo, payload } })
 }
 
 const proposal = () => ({ number: 7, user: { login: MEMBER }, labels: [{ name: 'proposal' }, { name: 'P2' }] })
@@ -342,4 +356,57 @@ test('adding a priority label by hand removes the old one', async () => {
     },
   })
   assert.deepEqual(labels(gh.state), ['P0', 'job'])
+})
+
+test("a command whose run was dropped for a newer event still applies on that event's run", async () => {
+  for (const [name, action, extra] of [
+    ['issues', 'edited'],
+    ['issues', 'labeled', { label: { name: 'job' } }],
+    ['issue_comment', 'deleted', { comment: { id: 999, user: { login: 'bob' } } }],
+    ['issue_comment', 'created', { comment: { id: 998, user: BOT } }],
+  ]) {
+    const gh = fakeGitHub(job())
+    await say(gh, MEMBER, '/take', { silent: true }) // its own run was dropped
+    await event(gh, name, action, extra)
+    assert.deepEqual(gh.state.issue.assignees, [{ login: MEMBER }], `${name} ${action}`)
+    assert.deepEqual(gh.state.reactions, ['+1'])
+  }
+})
+
+test('a command deleted before its run is not carried out, and the run goes on', async () => {
+  const gh = fakeGitHub(job())
+  const done = await say(gh, ADMIN, '/done', { silent: true })
+  const take = await say(gh, MEMBER, '/take', { silent: true })
+  gh.state.comments = gh.state.comments.filter((c) => c.id !== done.id) // deleted seconds later
+  const payload = { action: 'created', issue: gh.state.issue, comment: structuredClone(done) }
+  await triage({ github: gh.github, core: quiet, context: { eventName: 'issue_comment', repo, payload } })
+  assert.equal(gh.state.issue.state, 'open')
+  assert.deepEqual(gh.state.issue.assignees, [{ login: MEMBER }], 'the next command still ran')
+  assert.equal(take.reactionList.length, 1)
+})
+
+test('an old command that is edited later is not replayed', async () => {
+  const gh = fakeGitHub(job())
+  const old = await say(gh, MEMBER, '/take', { silent: true, minutesAgo: 3 * 24 * 60 })
+  old.body = '/take\n\n(ignore this, I am out this week)'
+  old.updated_at = new Date().toISOString()
+  await say(gh, 'bob', 'Looks good')
+  assert.deepEqual(gh.state.issue.assignees, [])
+  assert.deepEqual(gh.state.reactions, [])
+})
+
+test('a late "labeled" run keeps the priority that replaced its label', async () => {
+  const gh = fakeGitHub({ ...job(), labels: [{ name: 'job' }, { name: 'P0' }] }) // P1 was set, then P0
+  await event(gh, 'issues', 'labeled', { label: { name: 'P1' } })
+  assert.deepEqual(labels(gh.state), ['P0', 'job'])
+})
+
+test('a form issue still labelled only "proposal" is filed by a later event', async () => {
+  const body = formatBody({ description: 'Book the studio', priority: 'P1', due: 'Oct 31 (hard deadline)' })
+  const gh = fakeGitHub({ number: 9, user: { login: ADMIN }, labels: [{ name: 'proposal' }], body })
+  await event(gh, 'issues', 'edited')
+  assert.deepEqual(labels(gh.state), ['P1', 'job'])
+  assert.equal(gh.state.issue.body, '### Description\n\nBook the studio\n\n### Due date\n\nOct 31 (hard deadline)\n')
+  await event(gh, 'issues', 'edited')
+  assert.deepEqual(labels(gh.state), ['P1', 'job'], 'and only once')
 })

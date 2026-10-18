@@ -115,7 +115,8 @@ export function toNote(raw: RawComment): Note {
     url: raw.html_url,
     commands: parseCommands(body),
     commandOnly: isCommandOnly(body),
-    failed: (raw.reactions?.confused ?? 0) > 0,
+    // The bot answers a command with 👍 or 😕; someone else's 😕 next to its 👍 isn't a failure.
+    failed: (raw.reactions?.confused ?? 0) > 0 && !((raw.reactions?.['+1'] ?? 0) > 0),
   }
 }
 

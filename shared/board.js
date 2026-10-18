@@ -77,20 +77,18 @@ function ymd(y, m, d) {
   return `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
 }
 
-/**
- * Read a due date into "YYYY-MM-DD". Accepts 2026-10-15, 2026/10/15, 10/15, 10/15/2026,
- * Oct 15, Oct/15, October 15 2026, 15 Oct. A missing year means the current year.
- */
-export function parseDue(text, today = new Date()) {
-  if (text == null) return null
-  const s = String(text).trim().replace(/\s+/g, ' ')
-  if (!s || /^_?no response_?$/i.test(s) || /^(none|n\/a|tbd|-)$/i.test(s)) return null
-  const year = today.getFullYear()
+/** Answers that mean "no date" (or no answer at all). */
+const NO_ANSWER = /^(_?no response_?|none|n\/a|tbd|-)$/i
+
+function readDate(s, year) {
   let m
-  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})\b/.exec(s))) return ymd(+m[1], +m[2], +m[3])
+  if ((m = /^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})(?!\d)/.exec(s))) return ymd(+m[1], +m[2], +m[3])
+  if ((m = /^(?:(\d{4}) ?年 ?)?(\d{1,2}) ?月 ?(\d{1,2}) ?[日号]?$/.exec(s)))
+    return ymd(m[1] ? +m[1] : year, +m[2], +m[3])
   if ((m = /^(\d{1,2})[-/.](\d{1,2})(?:[-/.](\d{2}|\d{4}))?$/.exec(s))) {
     const y = m[3] ? (m[3].length === 2 ? 2000 + +m[3] : +m[3]) : year
-    return ymd(y, +m[1], +m[2])
+    // Month first (10/15), unless the first number can't be a month (31/10 is day first).
+    return +m[1] > 12 ? ymd(y, +m[2], +m[1]) : ymd(y, +m[1], +m[2])
   }
   if ((m = /^([a-z]{3,})\.?[ /-]?(\d{1,2})(?:st|nd|rd|th)?(?:,? (\d{4}))?$/i.exec(s))) {
     const month = monthNumber(m[1])
@@ -103,6 +101,19 @@ export function parseDue(text, today = new Date()) {
   return null
 }
 
+/**
+ * Read a due date into "YYYY-MM-DD". Accepts 2026-10-15, 2026/10/15, 10/15, 10/15/2026, 31/10,
+ * Oct 15, Oct/15, October 15 2026, 15 Oct and 10月15日, also with a note after the date
+ * ("Oct 15 (hard deadline)"). A missing year means the current year.
+ */
+export function parseDue(text, today = new Date()) {
+  if (text == null) return null
+  const s = String(text).trim().replace(/\s+/g, ' ')
+  if (!s || NO_ANSWER.test(s)) return null
+  const year = today.getFullYear()
+  return readDate(s, year) ?? readDate(s.replace(/ ?[(（[].*$| [-–—] .*$|[,;，；] .*$/, ''), year)
+}
+
 // ---------------------------------------------------------------------------
 // Issue bodies. The issue form (and the web app) write:
 //
@@ -112,12 +123,18 @@ export function parseDue(text, today = new Date()) {
 //   P1 · High
 //   ### Due date
 //   2026-10-20
+//
+// People edit bodies by hand too, so reading is forgiving and changes are surgical: a change
+// rewrites the one answer it is about and keeps every other line as it was written.
 
 const FIELDS = {
   description: ['description', 'details', 'summary'],
   priority: ['priority'],
   due: ['due date', 'due', 'deadline'],
 }
+const HEADINGS = { description: '### Description', priority: '### Priority', due: '### Due date' }
+const EMPTY = '_No response_'
+const READ = { priority: (line) => parsePriority(line), due: (line) => parseDue(line) }
 
 function fieldFor(heading) {
   const h = heading.trim().toLowerCase().replace(/:$/, '').trim()
@@ -131,51 +148,152 @@ function clean(text) {
 }
 
 /**
- * Split an issue body into our fields. Only known headings start a field, so a description can use
- * its own "###" headings freely. Text before the first field counts as description.
+ * Finds the fields. The form writes Description, Priority and Due date in that order, and a
+ * description can have sub-headings of its own (even one called "Deadline"). So the first
+ * Description heading is the description, and the last Priority and Due date headings whose first
+ * line reads as an answer are those fields. A field's section runs to the next field heading.
+ */
+function layout(body) {
+  const lines = String(body ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+  const found = { description: [], priority: [], due: [] }
+  let inFence = false
+  lines.forEach((line, at) => {
+    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
+    else if (!inFence) {
+      const key = fieldFor(/^#{2,4}\s+(.+?)\s*#*\s*$/.exec(line)?.[1] ?? '')
+      if (key) found[key].push(at)
+    }
+  })
+  const answers = (key) => (at) => {
+    const next = lines.slice(at + 1).find((line) => line.trim())
+    return next === undefined || /^#/.test(next) || NO_ANSWER.test(next.trim()) || READ[key](next) !== null
+  }
+  const heads = {
+    description: found.description[0],
+    priority: found.priority.filter(answers('priority')).at(-1),
+    due: found.due.filter(answers('due')).at(-1),
+  }
+  const starts = Object.values(heads)
+    .filter((at) => at !== undefined)
+    .sort((a, b) => a - b)
+  const section = (at) =>
+    at === undefined ? null : { head: at, from: at + 1, to: starts.find((s) => s > at) ?? lines.length }
+  return {
+    lines,
+    first: starts[0] ?? lines.length,
+    description: section(heads.description),
+    priority: section(heads.priority),
+    due: section(heads.due),
+    // Where a new due date goes when no Due date section reads as one (e.g. "end of October").
+    lastDueHeading: found.due.at(-1),
+  }
+}
+
+/** The line with a field's answer: the section's first line, if it reads as one (or as "none"). */
+function answerAt(lines, section, read) {
+  if (!section) return -1
+  for (let i = section.from; i < section.to; i++) {
+    if (!lines[i].trim()) continue
+    return read(lines[i]) !== null || NO_ANSWER.test(lines[i].trim()) ? i : -1
+  }
+  return -1
+}
+
+/**
+ * Split an issue body into our fields. Everything that isn't a field heading or an answer is
+ * description, in the order it was written, so nothing people wrote is hidden.
  */
 export function parseBody(body) {
-  const parts = { pre: [] }
-  let current = 'pre'
-  let inFence = false
-  for (const line of String(body ?? '')
-    .replace(/\r\n?/g, '\n')
-    .split('\n')) {
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
-    const heading = inFence ? null : /^#{2,4}\s+(.+?)\s*#*\s*$/.exec(line)
-    const key = heading && fieldFor(heading[1])
-    if (key && !parts[key]) {
-      current = key
-      parts[key] = []
-      continue
-    }
-    parts[current].push(line)
+  const { lines, first, ...sections } = layout(body)
+  const parts = [[0, first]]
+  if (sections.description) parts.push([sections.description.from, sections.description.to])
+  const answers = { priority: null, due: null }
+  for (const key of ['priority', 'due']) {
+    const section = sections[key]
+    if (!section) continue
+    const at = answerAt(lines, section, READ[key])
+    if (at >= 0) answers[key] = READ[key](lines[at])
+    parts.push([at >= 0 ? at + 1 : section.from, section.to])
   }
-  const text = (key) => (parts[key] ? clean(parts[key].join('\n')) : '')
   return {
-    description: [text('pre'), text('description')].filter(Boolean).join('\n\n'),
-    priority: parsePriority(text('priority')),
-    due: parseDue(text('due')),
-    hasPriority: Boolean(parts.priority),
+    description: parts
+      .sort((a, b) => a[0] - b[0])
+      .map(([from, to]) => clean(lines.slice(from, to).join('\n')))
+      .filter(Boolean)
+      .join('\n\n'),
+    priority: answers.priority,
+    due: answers.due,
+    hasPriority: Boolean(sections.priority),
   }
 }
 
 /** Build an issue body in the same shape as the issue form. */
 export function formatBody({ description = '', priority = null, due = null } = {}) {
-  const sections = [`### Description\n\n${description.trim() || '_No response_'}`]
+  const sections = [`### Description\n\n${description.trim() || EMPTY}`]
   if (priority) sections.push(`### Priority\n\n${priorityLabel(priority)}`)
-  sections.push(`### Due date\n\n${due || '_No response_'}`)
+  sections.push(`### Due date\n\n${due || EMPTY}`)
   return sections.join('\n\n') + '\n'
 }
 
-/** Change some fields of an existing body. Pass priority: null to drop the Priority section. */
+// The description someone edits is everything parseBody calls description, so a new one replaces
+// all of that; the Priority and Due date answers stay exactly as written.
+function withDescription(body, description) {
+  const { lines, priority, due } = layout(body)
+  const answer = (section, read) => {
+    const at = answerAt(lines, section, read)
+    return at < 0 ? EMPTY : lines[at].trim()
+  }
+  const sections = [`${HEADINGS.description}\n\n${description.trim() || EMPTY}`]
+  if (priority) sections.push(`${HEADINGS.priority}\n\n${answer(priority, READ.priority)}`)
+  sections.push(`${HEADINGS.due}\n\n${due ? answer(due, READ.due) : EMPTY}`)
+  return sections.join('\n\n') + '\n'
+}
+
+// Puts a new answer into a field, adding the field if the body has none. An old answer that
+// couldn't be read stays below the new one, as part of the description.
+function withAnswer(body, key, value) {
+  const found = layout(body)
+  const { lines } = found
+  const section = found[key]
+  if (section) {
+    const at = answerAt(lines, section, READ[key])
+    if (at >= 0) lines[at] = value
+    else lines.splice(section.from, 0, '', value)
+  } else if (key === 'due' && found.lastDueHeading !== undefined) {
+    lines.splice(found.lastDueHeading + 1, 0, '', value)
+  } else if (key === 'priority' && found.due) {
+    lines.splice(found.due.head, 0, HEADINGS.priority, '', value, '')
+  } else {
+    while (lines.length && !lines[lines.length - 1].trim()) lines.pop()
+    lines.push(...(lines.length ? [''] : []), HEADINGS[key], '', value, '')
+  }
+  return lines.join('\n')
+}
+
+// Drops the Priority heading and its answer; any other text in that section stays.
+function withoutPriority(body) {
+  const { lines, priority } = layout(body)
+  if (!priority) return String(body ?? '')
+  const at = answerAt(lines, priority, READ.priority)
+  let end = at >= 0 ? at + 1 : priority.from
+  while (end < priority.to && !lines[end].trim()) end++
+  lines.splice(priority.head, end - priority.head)
+  return lines.join('\n')
+}
+
+/**
+ * Change some fields of an existing body, keeping everything else as written. Pass priority: null
+ * to drop the Priority section.
+ */
 export function updateBody(body, patch) {
-  const current = parseBody(body)
-  return formatBody({
-    description: 'description' in patch ? patch.description : current.description,
-    priority: 'priority' in patch ? patch.priority : current.hasPriority ? current.priority : null,
-    due: 'due' in patch ? patch.due : current.due,
-  })
+  let next = String(body ?? '')
+  if ('description' in patch) next = withDescription(next, patch.description ?? '')
+  if ('priority' in patch)
+    next = patch.priority ? withAnswer(next, 'priority', priorityLabel(patch.priority)) : withoutPriority(next)
+  if ('due' in patch && (patch.due || layout(next).due)) next = withAnswer(next, 'due', patch.due || EMPTY)
+  return next
 }
 
 // ---------------------------------------------------------------------------

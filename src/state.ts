@@ -7,6 +7,7 @@ import {
   formatBody,
   isPriorityLabel,
   parseBody,
+  priorityFromLabels,
   priorityName,
   updateBody,
   type PriorityKey,
@@ -617,11 +618,10 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
     async edit(job: Job, input: JobInput) {
       const v = me()
       const fields = { description: input.description, due: input.due }
-      // A body that still has its Priority answer (the bot hasn't filed it yet) keeps it in step.
-      const body = updateBody(
-        job.body,
-        parseBody(job.body).hasPriority ? { ...fields, priority: input.priority } : fields,
-      )
+      // Until the bot files a proposal (it then has a priority label), its Priority answer is the
+      // priority, so it changes along with the rest.
+      const unfiled = !priorityFromLabels(job.labels) && parseBody(job.body).hasPriority
+      const body = updateBody(job.body, unfiled ? { ...fields, priority: input.priority } : fields)
       const priorityChanged = input.priority !== job.priority
       const patch: Record<string, unknown> = { title: input.title.trim(), body }
       if (priorityChanged && v.isAdmin) patch.labels = priorityLabels(job, input.priority)

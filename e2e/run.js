@@ -85,9 +85,14 @@ async function main() {
         listEvents: async ({ issue_number }) => ({ data: S.events.filter((e) => e.issue === issue_number) }),
         listComments: async ({ issue_number, since }) => ({
           data: structuredClone(
-            S.comments.filter((c) => c.issue_number === issue_number && (!since || c.created_at >= since)),
+            S.comments.filter((c) => c.issue_number === issue_number && (!since || c.updated_at >= since)),
           ),
         }),
+        async getComment({ comment_id }) {
+          const c = S.comments.find((x) => x.id === comment_id)
+          if (!c) throw fail(404)
+          return { data: structuredClone(c) }
+        },
         listLabelsForRepo: async () => ({ data: S.repoLabels }),
         async createLabel({ name }) {
           S.repoLabels.push({ name })

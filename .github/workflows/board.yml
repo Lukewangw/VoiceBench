@@ -57,16 +57,37 @@ jobs:
     permissions:
       contents: read
       issues: write
-    # Runs for one issue go one at a time. Each run handles all of that issue's pending commands, so
-    # a run that gets dropped from the queue loses nothing.
+      checks: read
+    # Runs for one issue go one at a time, and a newer event replaces a run still waiting. Each run
+    # works through all of that issue's pending commands, so a replaced run loses nothing.
     concurrency:
       group: triage-${{ github.event.issue.number }}
       cancel-in-progress: false
     steps:
-      - uses: actions/checkout@v7
+      - name: Find the newest tested commit
+        id: tested
+        uses: actions/github-script@v9
         with:
+          retries: 3
+          script: |
+            // A push (or a manual run) brings its own commit, and this job only runs once its tests
+            // pass. Issue, comment and scheduled runs use the newest commit on main whose tests
+            // passed, so untested code never runs here, even if it is the latest commit.
+            if (['push', 'workflow_dispatch'].includes(context.eventName)) return core.setOutput('sha', context.sha)
+            const { data: commits } = await github.rest.repos.listCommits({ ...context.repo, per_page: 30 })
+            for (const commit of commits) {
+              const { data } = await github.rest.checks.listForRef({ ...context.repo, ref: commit.sha, check_name: 'Test' })
+              if (data.check_runs.some((run) => run.conclusion === 'success')) return core.setOutput('sha', commit.sha)
+            }
+            core.warning('None of the last 30 commits on main passed its tests, so nothing ran.')
+            core.setOutput('sha', '')
+      - uses: actions/checkout@v7
+        if: steps.tested.outputs.sha != ''
+        with:
+          ref: ${{ steps.tested.outputs.sha }}
           persist-credentials: false
       - uses: actions/github-script@v9
+        if: steps.tested.outputs.sha != ''
         with:
           retries: 3
           script: |
@@ -85,6 +106,7 @@ jobs:
     permissions:
       contents: read
       issues: read
+      checks: read
       pages: write
       id-token: write
     # One deploy at a time; a newer event replaces any deploy still waiting, and the snapshot is taken
@@ -111,24 +133,43 @@ jobs:
             const on = site?.build_type === 'workflow'
             if (!on) core.warning('The board was not published: set Settings → Pages → Source to "GitHub Actions", then run this workflow again.')
             core.setOutput('on', String(on))
-      - uses: actions/checkout@v7
+      - name: Find the newest tested commit
+        id: tested
         if: steps.pages.outputs.on == 'true'
+        uses: actions/github-script@v9
         with:
+          retries: 3
+          script: |
+            // A push (or a manual run) brings its own commit, and this job only runs once its tests
+            // pass. Issue, comment and scheduled runs use the newest commit on main whose tests
+            // passed, so untested code never runs here, even if it is the latest commit.
+            if (['push', 'workflow_dispatch'].includes(context.eventName)) return core.setOutput('sha', context.sha)
+            const { data: commits } = await github.rest.repos.listCommits({ ...context.repo, per_page: 30 })
+            for (const commit of commits) {
+              const { data } = await github.rest.checks.listForRef({ ...context.repo, ref: commit.sha, check_name: 'Test' })
+              if (data.check_runs.some((run) => run.conclusion === 'success')) return core.setOutput('sha', commit.sha)
+            }
+            core.warning('None of the last 30 commits on main passed its tests, so nothing ran.')
+            core.setOutput('sha', '')
+      - uses: actions/checkout@v7
+        if: steps.tested.outputs.sha != ''
+        with:
+          ref: ${{ steps.tested.outputs.sha }}
           persist-credentials: false
       - uses: actions/setup-node@v7
-        if: steps.pages.outputs.on == 'true'
+        if: steps.tested.outputs.sha != ''
         with:
           node-version: 24
           cache: npm
-      - if: steps.pages.outputs.on == 'true'
+      - if: steps.tested.outputs.sha != ''
         run: npm ci
       - name: Build
-        if: steps.pages.outputs.on == 'true'
+        if: steps.tested.outputs.sha != ''
         run: npm run build
         env:
           VITE_REPO: ${{ github.repository }}
       - name: Snapshot issues
-        if: steps.pages.outputs.on == 'true'
+        if: steps.tested.outputs.sha != ''
         uses: actions/github-script@v9
         with:
           retries: 3
@@ -138,11 +179,11 @@ jobs:
             const { default: snapshot } = await import(file.href)
             await snapshot({ github, context, core, outFile: 'dist/data.json' })
       - uses: actions/configure-pages@v6
-        if: steps.pages.outputs.on == 'true'
+        if: steps.tested.outputs.sha != ''
       - uses: actions/upload-pages-artifact@v5
-        if: steps.pages.outputs.on == 'true'
+        if: steps.tested.outputs.sha != ''
         with:
           path: dist
       - id: deployment
-        if: steps.pages.outputs.on == 'true'
+        if: steps.tested.outputs.sha != ''
         uses: actions/deploy-pages@v5
