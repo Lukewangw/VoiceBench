@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   PRIORITIES,
   isClearDue,
@@ -104,18 +104,18 @@ export function JobDrawer({
   }, [busy])
 
   // Messages sit above the footer, however tall it gets (a reason box, a note on a phone).
-  const footRef = useRef<HTMLDivElement>(null)
-  useEffect(() => {
-    const foot = footRef.current
-    if (!foot) return
+  const footObserver = useRef<ResizeObserver | null>(null)
+  const footRef = useCallback((foot: HTMLDivElement | null) => {
     const root = document.documentElement
-    const observer = new ResizeObserver(() => root.style.setProperty('--drawer-foot', `${foot.offsetHeight}px`))
-    observer.observe(foot)
-    return () => {
-      observer.disconnect()
+    footObserver.current?.disconnect()
+    footObserver.current = null
+    if (!foot) {
       root.style.removeProperty('--drawer-foot')
+      return
     }
-  })
+    footObserver.current = new ResizeObserver(() => root.style.setProperty('--drawer-foot', `${foot.offsetHeight}px`))
+    footObserver.current.observe(foot)
+  }, [])
 
   // Signed in from Pick up: do what they came for.
   useEffect(() => {
