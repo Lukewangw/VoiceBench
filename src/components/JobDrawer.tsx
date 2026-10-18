@@ -125,7 +125,10 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   } else if (job.status === 'done' && (viewer.isAdmin || mine)) {
     primary = button('reopen', 'Reopen', 'undo', () => actions.reopen(job))
   } else if (job.status === 'closed' && viewer.isAdmin) {
-    primary = button('approve', 'Approve after all', 'check', () => actions.approve(job))
+    // A cancelled job comes back as it was; a declined proposal needs approving.
+    primary = job.isJob
+      ? button('reopen', 'Reopen job', 'undo', () => actions.reopen(job))
+      : button('approve', 'Approve after all', 'check', () => actions.approve(job))
   }
 
   return (
@@ -245,7 +248,7 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
             </dd>
 
             <dt>
-              <Icon name="pencil" size={14} /> {job.status === 'proposal' ? 'Proposed' : 'Posted'}
+              <Icon name="pencil" size={14} /> {job.isJob ? 'Posted' : 'Proposed'}
             </dt>
             <dd>
               <span className="people">
@@ -268,17 +271,6 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
           </div>
           {job.description ? <Markdown text={job.description} /> : <p className="muted">No description yet.</p>}
 
-          {declining && (
-            <DeclineForm
-              verb={job.status === 'proposal' ? 'Decline' : 'Cancel job'}
-              busy={busy === 'decline'}
-              onCancel={() => setDeclining(false)}
-              onDecline={async (reason) => {
-                if (await run('decline', () => actions.decline(job, reason))) setDeclining(false)
-              }}
-            />
-          )}
-
           <h3 className="section-title">Activity</h3>
           <Activity job={job} notes={notes} />
           <Composer job={job} viewer={viewer} actions={actions} onSignIn={onSignIn} />
@@ -292,7 +284,23 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
           )}
         </div>
 
-        {primary && <div className="drawer-foot">{primary}</div>}
+        {(primary || declining) && (
+          <div className="drawer-foot">
+            {/* The reason goes where the buttons were, right by whatever asked for it. */}
+            {declining ? (
+              <DeclineForm
+                verb={job.status === 'proposal' ? 'Decline' : 'Cancel job'}
+                busy={busy === 'decline'}
+                onCancel={() => setDeclining(false)}
+                onDecline={async (reason) => {
+                  if (await run('decline', () => actions.decline(job, reason))) setDeclining(false)
+                }}
+              />
+            ) : (
+              primary
+            )}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -417,7 +425,7 @@ function DeclineForm({
   )
 }
 
-function describe(c: Command): string {
+function describe(c: Command, isJob: boolean): string {
   const who = mentionedUser(c.arg)
   switch (c.name) {
     case 'take':
@@ -430,8 +438,10 @@ function describe(c: Command): string {
       return 'reopened this'
     case 'approve':
       return 'approved this'
-    case 'reject':
-      return c.arg ? `declined this: “${c.arg}”` : 'declined this'
+    case 'reject': {
+      const verb = isJob ? 'cancelled this' : 'declined this'
+      return c.arg ? `${verb}: “${c.arg}”` : verb
+    }
     case 'priority': {
       const p = parsePriority(c.arg)
       return p ? `set priority to ${priorityLabel(p)}` : 'changed the priority'
@@ -443,14 +453,44 @@ function describe(c: Command): string {
   }
 }
 
+// What a command that didn't go through was trying to do.
+function attempt(c: Command, isJob: boolean): string {
+  const who = mentionedUser(c.arg)
+  switch (c.name) {
+    case 'take':
+      return who ? `tried to assign @${who}` : 'tried to pick this up'
+    case 'drop':
+      return who ? `tried to take @${who} off this` : 'tried to drop this'
+    case 'done':
+      return 'tried to mark this done'
+    case 'reopen':
+      return 'tried to reopen this'
+    case 'approve':
+      return 'tried to approve this'
+    case 'reject': {
+      const verb = isJob ? 'tried to cancel this' : 'tried to decline this'
+      return c.arg ? `${verb}: “${c.arg}”` : verb
+    }
+    case 'priority': {
+      const p = parsePriority(c.arg)
+      return p ? `tried to set priority to ${priorityLabel(p)}` : 'tried to change the priority'
+    }
+    case 'due': {
+      const d = parseDue(c.arg)
+      return d ? `tried to set the due date to ${dueShort(d)}` : 'tried to clear the due date'
+    }
+  }
+}
+
 function Activity({ job, notes }: { job: Job; notes: Note[] }) {
-  const sorted = [...notes].sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  // The bot's answers to commands that didn't go through are shown with those commands.
+  const sorted = notes.filter((n) => n.answers === undefined).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
   return (
     <ol className="timeline">
       <li className="event">
         <Avatar person={job.author} size={18} />
         <span>
-          <strong>{job.author.login}</strong> {job.status === 'proposal' ? 'proposed this' : 'posted this'}
+          <strong>{job.author.login}</strong> {job.isJob ? 'posted this' : 'proposed this'}
         </span>
         <time className="event-time" dateTime={job.createdAt}>
           {timeAgo(job.createdAt)}
@@ -473,8 +513,13 @@ function Activity({ job, notes }: { job: Job; notes: Note[] }) {
           <li key={`e${n.id}`} className={`event${n.failed ? ' failed' : ''}`}>
             <Avatar person={n.author} size={18} />
             <span className="event-text">
-              <strong>{n.author.login}</strong> {n.commands.map(describe).join(', ')}
-              {n.failed && <span className="muted"> (didn't go through)</span>}
+              <strong>{n.author.login}</strong>{' '}
+              {n.failed
+                ? n.commands.map((c) => attempt(c, job.isJob)).join(', ')
+                : n.commands.map((c) => describe(c, job.isJob)).join(', ')}
+              {n.failed && (
+                <span className="muted">{n.failedBecause ? `: ${n.failedBecause}` : " (didn't go through)"}</span>
+              )}
             </span>
             <time className="event-time" dateTime={n.createdAt}>
               {timeAgo(n.createdAt)}

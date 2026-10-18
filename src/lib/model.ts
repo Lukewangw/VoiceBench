@@ -2,6 +2,7 @@ import {
   JOB_LABEL,
   boardStatus,
   failedIds,
+  failureReasons,
   hasLabel,
   isCommandOnly,
   labelNames,
@@ -62,8 +63,12 @@ export interface Note {
   url: string
   commands: Command[]
   commandOnly: boolean
-  /** The bot reacted with 😕: the command didn't go through. */
+  /** The command didn't go through (the bot said so, or reacted 😕 without a 👍). */
   failed: boolean
+  /** Why not, from the bot's answer. */
+  failedBecause?: string
+  /** A bot answer about a command in this list: shown with that command instead of on its own. */
+  answers?: number
 }
 
 export function toPerson(u: RawUser | null | undefined): Person {
@@ -109,8 +114,16 @@ export function toJob(raw: RawIssue, source: Source): Job {
  * 👍 or 😕, so reaction counts alone can't tell).
  */
 export function withFailures(notes: Note[]): Note[] {
-  const failed = new Set(notes.filter((n) => n.author.isBot).flatMap((n) => failedIds(n.body)))
-  return failed.size ? notes.map((n) => (failed.has(n.id) ? { ...n, failed: true } : n)) : notes
+  const answer = new Map<number, Note>()
+  for (const n of notes) if (n.author.isBot) for (const id of failedIds(n.body)) answer.set(id, n)
+  if (!answer.size) return notes
+  const ids = new Set(notes.map((n) => n.id))
+  return notes.map((n) => {
+    const reply = answer.get(n.id)
+    if (reply) return { ...n, failed: true, failedBecause: failureReasons(reply.body).join('; ') || undefined }
+    const about = n.author.isBot ? failedIds(n.body).find((id) => ids.has(id)) : undefined
+    return about === undefined ? n : { ...n, answers: about }
+  })
 }
 
 export function toNote(raw: RawComment): Note {

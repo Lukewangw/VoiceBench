@@ -14,7 +14,7 @@ import {
   PROPOSAL_LABEL,
   PRIORITIES,
   boardStatus,
-  failedNote,
+  failureReply,
   hasLabel,
   isPriorityLabel,
   isRecord,
@@ -26,7 +26,6 @@ import {
   parsePriority,
   priorityFromLabels,
   priorityLabel,
-  quoteSafely,
   updateBody,
 } from '../../shared/board.js'
 
@@ -203,7 +202,7 @@ export function createBot({ github, core, owner, repo, number }) {
   async function keepOnePriority(added) {
     const issue = await getIssue()
     const current = labelNames(issue.labels).filter(isPriorityLabel)
-    let keep = added && hasLabel(issue.labels, added) ? added : null
+    let keep = added && isPriorityLabel(added) && hasLabel(issue.labels, added) ? added : null
     if (!keep) {
       if (current.length < 2) return
       const events = await github.paginate(github.rest.issues.listEvents, { ...ref, per_page: 100 })
@@ -336,13 +335,12 @@ export function createBot({ github, core, owner, repo, number }) {
     const problems = []
     for (const command of commands) {
       const problem = await handlers[command.name](command.arg)
-      const said = quoteSafely(`/${command.name}${command.arg ? ' ' + command.arg : ''}`)
-      if (problem) problems.push(`- \`${said}\`: ${problem}`)
+      if (problem)
+        problems.push({ command: `/${command.name}${command.arg ? ' ' + command.arg : ''}`, reason: problem })
     }
     await react(comment, problems.length ? 'confused' : '+1')
     if (problems.length) {
-      const body = `@${actor} I couldn't do that:\n${problems.join('\n')}\n\n${failedNote(comment.id)}`
-      await github.rest.issues.createComment({ ...ref, body })
+      await github.rest.issues.createComment({ ...ref, body: failureReply(actor, problems, comment.id) })
     }
     core.info(
       `#${number}: @${actor}${admin ? ' (admin)' : ''} ran ${ran}` +

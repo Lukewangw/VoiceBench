@@ -1448,7 +1448,7 @@ button {
 }
 
 .decline {
-  margin-top: 20px;
+  flex: 1;
   padding: 14px;
   border-radius: 12px;
   border: 1px solid color-mix(in srgb, var(--red) 30%, var(--border));
@@ -1803,6 +1803,14 @@ textarea.input {
 
 /* ---------- Toasts ---------- */
 
+/* Messages never cover the buttons people need next: above a job's footer, or at the top of a form. */
+body:has(.drawer-layer) .toasts {
+  bottom: calc(88px + env(safe-area-inset-bottom));
+}
+body:has(.modal-layer) .toasts {
+  top: 16px;
+  bottom: auto;
+}
 .toasts {
   position: fixed;
   left: 50%;
@@ -1924,7 +1932,7 @@ textarea.input {
     display: none;
   }
   .row {
-    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     gap: 10px;
     padding: 12px 14px;
   }

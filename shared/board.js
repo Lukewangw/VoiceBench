@@ -397,6 +397,17 @@ export function quoteSafely(text) {
   return String(text ?? '').replace(/<!--|-->/g, '')
 }
 
+/** The bot's answer to a comment it couldn't carry out: each command and why, then the mark. */
+export function failureReply(actor, problems, commentId) {
+  const lines = problems.map(({ command, reason }) => `- \`${quoteSafely(command)}\`: ${reason}`)
+  return `@${actor} I couldn't do that:\n${lines.join('\n')}\n\n${failedNote(commentId)}`
+}
+
+/** The reasons given in such an answer. */
+export function failureReasons(text) {
+  return [...String(text ?? '').matchAll(/^- `[^`\n]*`: (.+)$/gm)].map((m) => m[1].trim())
+}
+
 export function isRecord(text) {
   return /<!--\s*job board: already applied\s*-->/i.test(String(text ?? ''))
 }

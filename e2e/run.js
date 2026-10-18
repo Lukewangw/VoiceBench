@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 import { build } from 'vite'
 import { createBot } from '../.github/scripts/triage.js'
-import { isRecord, parseBody } from '../shared/board.js'
+import { isPriorityLabel, isRecord, parseBody } from '../shared/board.js'
 import * as fx from './fixture.js'
 
 const HERE = fileURLToPath(new URL('.', import.meta.url))
@@ -360,7 +360,7 @@ async function main() {
         for (const l of i.labels) {
           if (before.has(l.name)) continue
           S.events.push({ issue: i.number, event: 'labeled', label: { name: l.name }, actor: { login: who } })
-          fireBot(i.number, (bot) => bot.keepOnePriority(l.name))
+          if (isPriorityLabel(l.name)) fireBot(i.number, (bot) => bot.keepOnePriority(l.name))
         }
         return respond(route, 200, i)
       }
@@ -374,7 +374,7 @@ async function main() {
           if (i.labels.some((l) => l.name === name)) continue
           i.labels.push({ name })
           S.events.push({ issue: i.number, event: 'labeled', label: { name }, actor: { login: who } })
-          fireBot(i.number, (bot) => bot.keepOnePriority(name))
+          if (isPriorityLabel(name)) fireBot(i.number, (bot) => bot.keepOnePriority(name))
         }
       }
       if (method === 'DELETE') {
@@ -799,13 +799,20 @@ async function main() {
   assert.deepEqual(
     await nav.locator('.drawer .event.failed .event-text').allInnerTexts(),
     [
-      'dana approved this (didn’t go through)',
-      'sam took @alice off this (didn’t go through)',
-      'sam declined this: “Duplicate of https://github.com/octo/board/issues/1#issuecomment-1234567890123456789012345678901234567890” (didn’t go through)',
+      'dana tried to approve this: only admins can approve proposals.',
+      'sam tried to take @alice off this (didn’t go through)',
+      'sam tried to cancel this: “Duplicate of https://github.com/octo/board/issues/1#issuecomment-1234567890123456789012345678901234567890” (didn’t go through)',
     ].map((t) => t.replace('’', "'")),
     'failed commands are the ones the bot says it could not do, whatever the reactions',
   )
-  step("a link to a missing job says so and Back still leaves it; failed commands are the ones the bot couldn't do")
+  await nav.locator('.drawer .event.failed').first().scrollIntoViewIfNeeded()
+  await nav.screenshot({ path: OUT + '/35-failed-lines.png' })
+  assert.equal(
+    await nav.locator('.drawer .comment:has-text("I couldn\'t do that")').count(),
+    0,
+    "the bot's answer is folded into the line it answers",
+  )
+  step('a link to a missing job says so and Back still leaves it; failed commands say why, once')
 
   // ---------------- Search, shortcuts, paging ----------------
   console.log('Search, shortcuts and long lists')
@@ -1072,6 +1079,8 @@ async function main() {
   await phoneAdmin.fill('.modal input[type=password]', 'admin-token')
   await phoneAdmin.click('.modal button:has-text("Connect")')
   await phoneAdmin.waitForSelector('.row .row-action')
+  await sleep(400)
+  await phoneAdmin.screenshot({ path: OUT + '/34-phone-admin-others.png' })
   assert.equal(
     await phoneAdmin.getByRole('button', { name: 'Approve' }).count(),
     await phoneAdmin.locator('.row .row-action').count(),
