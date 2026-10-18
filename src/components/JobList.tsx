@@ -30,7 +30,7 @@ interface ListProps {
   othersCount: number
   loading: boolean
   viewer: Viewer | null
-  pending: Record<number, string>
+  pending: Record<string, string>
   onNew(): void
   onApprove(job: Job): Promise<void>
 }
@@ -47,7 +47,7 @@ export function JobList({ tab, jobs, othersCount, loading, viewer, pending, onNe
         ) : (
           <ul className="list">
             {jobs.map((job) => (
-              <Row key={job.number} tab={tab} job={job} viewer={viewer} pending={pending[job.number]} onApprove={onApprove} />
+              <Row key={job.key} tab={tab} job={job} viewer={viewer} pending={pending[job.key]} onApprove={onApprove} />
             ))}
           </ul>
         )}
@@ -83,7 +83,7 @@ function Row({ tab, job, viewer, pending, onApprove }: { tab: Tab; job: Job; vie
 
   return (
     <li className={`row row-${job.status}${mine ? ' row-mine' : ''}`}>
-      <a className="row-link" href={`#/${tab}/${job.number}`}>
+      <a className="row-link" href={`#/${tab}/${job.key}`}>
         <span className="sr-only">
           Open {job.title}
           {mine && " (you're on it)"}
@@ -91,7 +91,14 @@ function Row({ tab, job, viewer, pending, onApprove }: { tab: Tab; job: Job; vie
       </a>
       <PriorityPill priority={job.priority} />
       <div className="row-main">
-        <span className="row-title">{job.title}</span>
+        <span className="row-title">
+          {job.private && (
+            <span className="lock" title="Private: only admins can see this">
+              <Icon name="lock" size={13} />
+            </span>
+          )}
+          {job.title}
+        </span>
         {meta && <span className="row-meta">{meta}</span>}
       </div>
       {pending ? (

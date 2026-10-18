@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { REPO, REPO_URL, TITLE } from '../config'
+import { PRIVATE_REPO, REPO, REPO_URL, TITLE } from '../config'
 import { timeAgo } from '../lib/format'
 import type { Viewer } from '../state'
 import { Avatar, GitHubMark, Icon, Logo } from './ui'
@@ -85,6 +85,18 @@ function UserMenu({ viewer, onSignOut }: { viewer: Viewer; onSignOut(): void }) 
               </div>
             </div>
           </div>
+          {viewer.isAdmin && viewer.privateAccess && (
+            <div className={`menu-note${viewer.privateAccess === 'yes' ? ' on' : ''}`}>
+              <Icon name="lock" size={14} />
+              <span>
+                {viewer.privateAccess === 'yes'
+                  ? 'You can see private jobs.'
+                  : viewer.privateAccess === 'needs-scope'
+                    ? 'Private jobs are hidden: sign in again with a token that has the repo scope.'
+                    : `Private jobs are off: ${PRIVATE_REPO} doesn't exist yet or isn't shared with you.`}
+              </span>
+            </div>
+          )}
           <a className="menu-item" role="menuitem" href={REPO_URL} target="_blank" rel="noreferrer">
             <GitHubMark /> {REPO}
             <Icon name="external" size={13} className="menu-trail" />

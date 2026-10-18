@@ -11,18 +11,18 @@ import { byPriority, byRecentlyClosed, type Job } from './lib/model'
 import { errorText, useAuth, useBoard, type JobInput } from './state'
 import { toast } from './toast'
 
-// Routes live in the hash so links work on GitHub Pages: #/jobs, #/others/12, #/done
+// Routes live in the hash so links work on GitHub Pages: #/jobs, #/others/12, #/jobs/p3 (private), #/done
 interface Route {
   tab: Tab
-  job: number | null
+  /** A job key: "12", or "p3" for a private job. */
+  job: string | null
 }
 
 function readRoute(): Route {
-  const [tab, num] = location.hash.replace(/^#\/?/, '').split('/')
-  const n = Number(num)
+  const [tab, key] = location.hash.replace(/^#\/?/, '').split('/')
   return {
     tab: tab === 'others' || tab === 'done' ? tab : 'jobs',
-    job: Number.isInteger(n) && n > 0 ? n : null,
+    job: /^p?[1-9]\d*$/.test(key ?? '') ? key : null,
   }
 }
 
@@ -33,7 +33,7 @@ function useRoute() {
     window.addEventListener('hashchange', onChange)
     return () => window.removeEventListener('hashchange', onChange)
   }, [])
-  const go = useCallback((tab: Tab, job: number | null = null) => {
+  const go = useCallback((tab: Tab, job: string | null = null) => {
     location.hash = `/${tab}${job ? `/${job}` : ''}`
   }, [])
   return [route, go] as const
@@ -57,11 +57,11 @@ export function App() {
     [board.jobs],
   )
   const counts = { jobs: lists.jobs.length, others: lists.others.length, done: lists.done.length }
-  const selected = route.job ? (board.jobs.find((j) => j.number === route.job) ?? null) : null
+  const selected = route.job ? (board.jobs.find((j) => j.key === route.job) ?? null) : null
 
   useEffect(() => {
     if (route.job && !board.loading && !selected) {
-      toast(`Couldn't find job #${route.job}.`, 'error')
+      toast(`Couldn't find that job${route.job.startsWith('p') ? ' (private jobs need an admin sign-in)' : ''}.`, 'error')
       go(route.tab)
     }
   }, [route.job, route.tab, board.loading, selected, go])
@@ -80,9 +80,9 @@ export function App() {
       await board.actions.edit(form.job, input)
       setForm(null)
     } else {
-      const number = await board.actions.create(input)
+      const key = await board.actions.create(input)
       setForm(null)
-      go(viewer?.isAdmin ? 'jobs' : 'others', number)
+      go(viewer?.isAdmin ? 'jobs' : 'others', key)
     }
   }
 
@@ -156,12 +156,12 @@ export function App() {
 
       {selected && (
         <JobDrawer
-          key={selected.number}
+          key={selected.key}
           job={selected}
           tab={route.tab}
-          notes={board.notes[selected.number] ?? []}
+          notes={board.notes[selected.key] ?? []}
           viewer={viewer}
-          pending={board.pending[selected.number]}
+          pending={board.pending[selected.key]}
           actions={board.actions}
           loadNotes={board.loadNotes}
           onClose={closeDrawer}

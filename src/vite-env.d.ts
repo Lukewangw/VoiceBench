@@ -3,4 +3,5 @@
 interface ImportMetaEnv {
   readonly VITE_REPO?: string
   readonly VITE_TITLE?: string
+  readonly VITE_PRIVATE_REPO?: string
 }

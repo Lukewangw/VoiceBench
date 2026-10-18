@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { NEW_TOKEN_URL, REPO, REPO_URL } from '../config'
+import { NEW_ADMIN_TOKEN_URL, NEW_TOKEN_URL, REPO, REPO_URL } from '../config'
 import { errorText, type Viewer } from '../state'
 import { GitHubMark, Icon, Spinner } from './ui'
 
@@ -67,15 +67,27 @@ export function SignIn({ onSignIn, onClose }: Props) {
               <div className="step-text">
                 The <code>public_repo</code> scope is already ticked. Pick an expiry, then click <em>Generate token</em>.
               </div>
-              <a
-                className="btn btn-outline btn-sm"
-                href={NEW_TOKEN_URL}
-                target="_blank"
-                rel="noreferrer"
-                onClick={() => setTimeout(() => inputRef.current?.focus(), 300)}
-              >
-                <GitHubMark /> Create token <Icon name="external" size={13} />
-              </a>
+              <div className="step-links">
+                <a
+                  className="btn btn-outline btn-sm"
+                  href={NEW_TOKEN_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={() => setTimeout(() => inputRef.current?.focus(), 300)}
+                >
+                  <GitHubMark /> Create token <Icon name="external" size={13} />
+                </a>
+                <a
+                  className="link-btn"
+                  href={NEW_ADMIN_TOKEN_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  title="The repo scope also reads private repositories, which private jobs need"
+                  onClick={() => setTimeout(() => inputRef.current?.focus(), 300)}
+                >
+                  <Icon name="lock" size={13} /> Admin? Create one that also sees private jobs
+                </a>
+              </div>
             </div>
           </li>
           <li>

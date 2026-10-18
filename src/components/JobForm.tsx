@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { DEFAULT_PRIORITY, PRIORITIES, priorityLabel, type PriorityKey } from '../../shared/board.js'
-import { REPO_URL } from '../config'
+import { PRIVATE_REPO, PRIVATE_REPO_URL, REPO_URL } from '../config'
 import { dueRelative, todayYmd } from '../lib/format'
 import type { Job } from '../lib/model'
 import { errorText, type JobInput, type Viewer } from '../state'
@@ -21,6 +21,7 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
   const [description, setDescription] = useState(job?.description ?? '')
   const [priority, setPriority] = useState<PriorityKey>(job?.priority ?? DEFAULT_PRIORITY)
   const [due, setDue] = useState(job?.due ?? '')
+  const [isPrivate, setIsPrivate] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
@@ -34,7 +35,8 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
 
   const editing = !!job
   const isAdmin = !!viewer?.isAdmin
-  const heading = editing ? 'Edit job' : isAdmin ? 'New job' : 'Propose a job'
+  const canPrivate = isAdmin && viewer?.privateAccess === 'yes'
+  const heading = editing ? (job.private ? 'Edit private job' : 'Edit job') : isAdmin ? 'New job' : 'Propose a job'
   const valid = title.trim().length > 0
 
   const submit = async () => {
@@ -43,7 +45,7 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
     setSaving(true)
     setError(null)
     try {
-      await onSubmit({ title: title.trim(), description: description.trim(), priority, due: due || null })
+      await onSubmit({ title: title.trim(), description: description.trim(), priority, due: due || null, private: isPrivate })
     } catch (e) {
       setError(errorText(e))
       setSaving(false)
@@ -80,9 +82,11 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
         </div>
         {!editing && (
           <p className="modal-sub">
-            {isAdmin
-              ? 'Goes straight onto the board, ready to be picked up.'
-              : 'It goes to Others first. Once an admin approves it, it shows up in Jobs.'}
+            {!isAdmin
+              ? 'It goes to Others first. Once an admin approves it, it shows up in Jobs.'
+              : isPrivate
+                ? 'Only admins will see it. It is kept in the private repository, never on the public board.'
+                : 'Goes straight onto the board, ready to be picked up.'}
           </p>
         )}
 
@@ -153,6 +157,55 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
           </label>
         </div>
 
+        {!editing && isAdmin && (
+          <div className="field">
+            <span className="field-label">Who can see it</span>
+            <div className="vis" role="radiogroup" aria-label="Who can see it">
+              <button type="button" role="radio" aria-checked={!isPrivate} className={`vis-opt${!isPrivate ? ' selected' : ''}`} onClick={() => setIsPrivate(false)}>
+                <Icon name="users" />
+                <span>
+                  <b>Everyone</b>
+                  <small>On the public board</small>
+                </span>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={isPrivate}
+                disabled={!canPrivate}
+                className={`vis-opt vis-private${isPrivate ? ' selected' : ''}`}
+                onClick={() => setIsPrivate(true)}
+              >
+                <Icon name="lock" />
+                <span>
+                  <b>Admins only</b>
+                  <small>Private job</small>
+                </span>
+              </button>
+            </div>
+            {!canPrivate && viewer?.privateAccess && (
+              <p className="vis-hint">
+                {viewer?.privateAccess === 'needs-scope' ? (
+                  <>
+                    Private jobs need a token that can read private repositories.{' '}
+                    <button type="button" className="link-btn" onClick={onSignIn}>
+                      Sign in again with the repo scope
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    Private jobs are kept in{' '}
+                    <a href={PRIVATE_REPO_URL} target="_blank" rel="noreferrer">
+                      {PRIVATE_REPO}
+                    </a>
+                    , which doesn't exist yet or isn't shared with you.
+                  </>
+                )}
+              </p>
+            )}
+          </div>
+        )}
+
         {error && <div className="form-error">{error}</div>}
 
         <div className="modal-foot">
@@ -169,8 +222,8 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
             </button>
             {viewer ? (
               <button type="submit" className="btn btn-primary" disabled={!valid || saving}>
-                {saving ? <Spinner /> : <Icon name={editing ? 'check' : 'plus'} />}{' '}
-                {editing ? 'Save' : isAdmin ? 'Add job' : 'Submit proposal'}
+                {saving ? <Spinner /> : <Icon name={editing ? 'check' : isPrivate ? 'lock' : 'plus'} />}{' '}
+                {editing ? 'Save' : isPrivate ? 'Add private job' : isAdmin ? 'Add job' : 'Submit proposal'}
               </button>
             ) : (
               <button type="submit" className="btn btn-dark" disabled={!valid}>

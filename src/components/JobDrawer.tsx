@@ -22,7 +22,7 @@ interface Props {
   viewer: Viewer | null
   pending?: string
   actions: Board['actions']
-  loadNotes(n: number): Promise<void>
+  loadNotes(job: Job): Promise<void>
   onClose(): void
   onEdit(job: Job): void
   onSignIn(): void
@@ -43,9 +43,9 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
 
   useEffect(() => {
     panelRef.current?.focus()
-    void loadNotes(job.number)
+    void loadNotes(job)
     setDeclining(false)
-  }, [job.number, loadNotes])
+  }, [job.key, loadNotes])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('.modal') && onClose()
@@ -72,7 +72,7 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   const editable = actions.canEditDetails(job)
   const isJob = job.status === 'open' || job.status === 'active'
   const status = STATUS[job.status]
-  const link = `${location.origin}${location.pathname}#/${tab}/${job.number}`
+  const link = `${location.origin}${location.pathname}#/${tab}/${job.key}`
 
   const button = (key: string, label: string, icon: IconName, fn: () => Promise<unknown>, kind = 'btn-outline') => (
     <button className={`btn ${kind}`} disabled={!!busy || !!pending} onClick={() => run(key, fn)}>
@@ -121,7 +121,8 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
       <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabIndex={-1} ref={panelRef}>
         <div className="drawer-head">
           <span className="crumb">
-            {tab === 'others' ? 'Others' : tab === 'done' ? 'Done' : 'Jobs'} <span className="crumb-sep">/</span> #{job.number}
+            {tab === 'others' ? 'Others' : tab === 'done' ? 'Done' : 'Jobs'} <span className="crumb-sep">/</span>{' '}
+            {job.private && <Icon name="lock" size={12} className="crumb-lock" />}#{job.number}
           </span>
           <div className="drawer-tools">
             <button
@@ -150,6 +151,11 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
               {job.status === 'closed' && job.labels.includes('job') ? 'Cancelled' : status.label}
               {job.status === 'done' && job.closedAt && <span className="status-sub">· {shortDate(new Date(job.closedAt))}</span>}
             </span>
+            {job.private && (
+              <span className="status-chip tone-private" title="Kept in the private repository; only admins can see it">
+                <Icon name="lock" size={13} /> Private · admins only
+              </span>
+            )}
             {pending && (
               <span className="status-chip tone-gray">
                 <Spinner size={12} /> {pending}
@@ -394,7 +400,7 @@ function Activity({ job, notes }: { job: Job; notes: Note[] }) {
 function Composer({ job, viewer, actions, onSignIn }: { job: Job; viewer: Viewer | null; actions: Board['actions']; onSignIn(): void }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  useEffect(() => setText(''), [job.number])
+  useEffect(() => setText(''), [job.key])
 
   if (!viewer) {
     return (

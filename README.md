@@ -31,11 +31,28 @@ api.github.com.
 | Edit priority and due date          |    their own proposals         |   ✓    |
 | Add jobs straight to the board      |                                |   ✓    |
 | Approve or decline proposals        |                                |   ✓    |
+| See and add private jobs            |                                | ✓ (see below) |
 
 **Admins are the people with write access to this repository.** To make someone an admin, add them under
 Settings → Collaborators. Everyone else doesn't need to be added at all.
 
-The repository is public, so the jobs on the board are public too.
+The repository is public, so the jobs on the board are public too, except private jobs.
+
+### Private jobs (admins only)
+
+When adding a job, admins can choose **Admins only**. Private jobs are kept in a separate private repository,
+`VoiceBench-private`, so they never appear in this public repository or on the published site. On the board they
+show with a 🔒, only to admins who can access that repository; everyone else's browser never loads them.
+
+One-time setup:
+
+1. Create a **private** repository named `VoiceBench-private` under the same account (it can stay empty).
+2. Add every admin as a collaborator there as well.
+3. Admins sign in with a token that has the `repo` scope (the sign-in dialog links to one), because a
+   `public_repo` token can't read private repositories. The board's account menu says whether you can see them.
+
+A private job stays private: GitHub doesn't move issues from a private repository to a public one. Private jobs
+skip the bot, since only admins see them and admins' changes apply directly.
 
 ## Doing it on GitHub instead
 

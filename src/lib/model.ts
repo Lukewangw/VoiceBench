@@ -1,4 +1,5 @@
 import {
+  JOB_LABEL,
   boardStatus,
   isCommandOnly,
   labelNames,
@@ -19,7 +20,17 @@ export interface Person {
   isBot: boolean
 }
 
+/** Which repository an issue came from. */
+export interface Source {
+  repo: string
+  private: boolean
+}
+
 export interface Job {
+  /** Unique across both repositories: "12" for public issue #12, "p3" for private issue #3. */
+  key: string
+  repo: string
+  private: boolean
   number: number
   title: string
   body: string
@@ -61,16 +72,23 @@ export function toPerson(u: RawUser | null | undefined): Person {
   }
 }
 
-export function toJob(raw: RawIssue): Job {
+export const jobKey = (number: number, isPrivate = false) => (isPrivate ? `p${number}` : String(number))
+
+export function toJob(raw: RawIssue, source: Source): Job {
   const fields = parseBody(raw.body)
+  // Only admins can see the private repository, so everything in it counts as an approved job.
+  const labels = source.private ? [...raw.labels, JOB_LABEL] : raw.labels
   return {
+    key: jobKey(raw.number, source.private),
+    repo: source.repo,
+    private: source.private,
     number: raw.number,
     title: raw.title,
     body: raw.body ?? '',
     description: fields.description,
     priority: priorityFromLabels(raw.labels) ?? fields.priority,
     due: fields.due,
-    status: boardStatus(raw),
+    status: boardStatus({ ...raw, labels }),
     author: toPerson(raw.user),
     assignees: (raw.assignees ?? []).map(toPerson),
     labels: labelNames(raw.labels),
