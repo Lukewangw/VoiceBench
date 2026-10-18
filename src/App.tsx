@@ -59,11 +59,13 @@ export function App() {
 
   // Signed out (here, in another tab, or because GitHub stopped taking the token) or signed in as
   // someone else: a job being written or edited belongs to the old session (it may be private).
-  const formSession = useRef(auth.token)
+  // A new token for the same account (say, one that can see private jobs) keeps it.
+  const signedInAs = auth.token ? (viewer?.login.toLowerCase() ?? null) : null
+  const formOwner = useRef(signedInAs)
   useEffect(() => {
-    if (formSession.current && auth.token !== formSession.current) setForm(null)
-    formSession.current = auth.token
-  }, [auth.token])
+    if (formOwner.current && signedInAs !== formOwner.current) setForm(null)
+    formOwner.current = signedInAs
+  }, [signedInAs])
 
   const lists = useMemo(() => {
     const shown = board.jobs.filter((j) => matchesQuery(j, query))

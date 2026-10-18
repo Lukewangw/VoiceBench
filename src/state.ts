@@ -558,17 +558,17 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       priority,
     }: { add?: string[]; remove?: string[]; patch?: object; priority?: PriorityKey },
   ) => {
+    // A new priority replaces the ones GitHub has now (our copy can be a minute old), and only those:
+    // one someone else sets while this runs stays, rather than both changes undoing each other.
+    const replaced = priority
+      ? labelNames((await api.get<RawIssue>(path(job))).labels).filter(
+          (l) => isPriorityLabel(l) && l.toUpperCase() !== priority,
+        )
+      : []
     if (patch) await api.patch(path(job), patch)
     if (add.length) await api.post(`${path(job)}/labels`, { labels: add })
-    for (const name of remove) await unlabel(job, name)
-    let raw = await api.get<RawIssue>(path(job))
-    // The priority just set is the only one (someone may have set another meanwhile; the private
-    // repo has no bot to tidy that up).
-    const extra = priority
-      ? labelNames(raw.labels).filter((l) => isPriorityLabel(l) && l.toUpperCase() !== priority)
-      : []
-    for (const name of extra) await unlabel(job, name)
-    if (extra.length) raw = await api.get<RawIssue>(path(job))
+    for (const name of [...remove, ...replaced]) await unlabel(job, name)
+    const raw = await api.get<RawIssue>(path(job))
     putIssue(raw, sourceOf(job))
     return raw
   }

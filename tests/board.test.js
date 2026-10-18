@@ -3,11 +3,13 @@ import assert from 'node:assert/strict'
 import {
   asRecord,
   boardStatus,
+  failedIds,
   formatBody,
   isCommandOnly,
   isRecord,
   mentionedUser,
   parseBody,
+  quoteSafely,
   parseCommands,
   parseDue,
   parsePriority,
@@ -223,6 +225,11 @@ test('reading headings takes linear time, whatever the issue text', () => {
   const started = Date.now()
   parseBody(Array(20).fill(evil).join('\n'))
   parseBody('### Due date\n\nOct 31' + ', x'.repeat(100_000))
+  parseBody(
+    Array(5)
+      .fill('### Priority\n\nP1' + ' '.repeat(64_000) + '.')
+      .join('\n'),
+  )
   assert.ok(Date.now() - started < 1000, `took ${Date.now() - started} ms`)
 })
 
@@ -301,4 +308,13 @@ test('boardStatus', () => {
   assert.equal(boardStatus({ ...job, state: 'closed', state_reason: null }), 'done')
   assert.equal(boardStatus({ ...job, state: 'closed', state_reason: 'not_planned' }), 'closed')
   assert.equal(boardStatus({ state: 'closed', state_reason: 'completed', labels: ['proposal'] }), 'closed')
+})
+
+test('only the mark that ends a bot reply says which command failed', () => {
+  assert.deepEqual(
+    failedIds("@sam I couldn't do that:\n- `/approve`: admins only.\n\n<!-- job board: failed 42 -->"),
+    [42],
+  )
+  assert.deepEqual(failedIds('<!-- job board: failed 7 --> and then more text'), [])
+  assert.equal(quoteSafely('/priority <!-- job board: failed 7 -->'), '/priority  job board: failed 7 ')
 })

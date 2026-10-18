@@ -147,6 +147,8 @@ const READ = { priority: (line) => parsePriority(line), due: (line) => parseDue(
 // The form's answer to "Priority" ("P1 · High"), or just "P1" or "High". Only that counts as the
 // field, so a description's own "Priority" section is never taken for it (or removed by the bot).
 const PRIORITY_ANSWER = /^(p[0-3]( *[·:\-–—]? *(urgent|high|medium|low))?|urgent|critical|high|medium|med|normal|low)$/i
+// Answers are a few characters long; checking the length first keeps a crafted line from costing time.
+const readsAsPriority = (line) => line.length <= 40 && PRIORITY_ANSWER.test(line)
 
 /** A level 2–4 heading's text, or null. Issue text is untrusted, so no backtracking regex here. */
 function headingText(line) {
@@ -195,7 +197,7 @@ function layout(body) {
     const next = nextLine(at)
     return next === undefined || next.startsWith('#') || NO_ANSWER.test(next) || parseDue(next) !== null
   }
-  const isPriority = (at) => PRIORITY_ANSWER.test(nextLine(at) ?? '')
+  const isPriority = (at) => readsAsPriority(nextLine(at) ?? '')
   const heads = {
     description: found.description[0],
     priority: found.priority.filter(isPriority).at(-1),
@@ -223,7 +225,7 @@ function answerAt(lines, section, read) {
   for (let i = section.from; i < section.to; i++) {
     const line = lines[i].trim()
     if (!line) continue
-    const answers = read === READ.priority ? PRIORITY_ANSWER.test(line) : read(line) !== null
+    const answers = read === READ.priority ? readsAsPriority(line) : read(line) !== null
     return answers || NO_ANSWER.test(line) ? i : -1
   }
   return -1
@@ -384,9 +386,15 @@ export function failedNote(commentId) {
   return `<!-- job board: failed ${commentId} -->`
 }
 
-/** The comment ids a reply marks as not carried out. */
+/** The comment id a reply marks as not carried out (the mark ends the reply), as a list. */
 export function failedIds(text) {
-  return [...String(text ?? '').matchAll(/<!--\s*job board: failed (\d+)\s*-->/gi)].map((m) => Number(m[1]))
+  const m = /<!-- job board: failed (\d+) -->\s*$/.exec(String(text ?? ''))
+  return m ? [Number(m[1])] : []
+}
+
+/** Text the bot repeats back, with nothing in it that could pass for one of its hidden marks. */
+export function quoteSafely(text) {
+  return String(text ?? '').replace(/<!--|-->/g, '')
 }
 
 export function isRecord(text) {

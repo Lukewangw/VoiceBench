@@ -26,6 +26,7 @@ import {
   parsePriority,
   priorityFromLabels,
   priorityLabel,
+  quoteSafely,
   updateBody,
 } from '../../shared/board.js'
 
@@ -335,7 +336,8 @@ export function createBot({ github, core, owner, repo, number }) {
     const problems = []
     for (const command of commands) {
       const problem = await handlers[command.name](command.arg)
-      if (problem) problems.push(`- \`/${command.name}${command.arg ? ' ' + command.arg : ''}\`: ${problem}`)
+      const said = quoteSafely(`/${command.name}${command.arg ? ' ' + command.arg : ''}`)
+      if (problem) problems.push(`- \`${said}\`: ${problem}`)
     }
     await react(comment, problems.length ? 'confused' : '+1')
     if (problems.length) {

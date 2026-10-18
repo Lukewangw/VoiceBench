@@ -291,6 +291,15 @@ test('people who were on a job cannot reopen it once an admin cancelled it', asy
   assert.equal(gh.state.issue.state, 'open')
 })
 
+test("a command can't make the bot's reply mark someone else's comment as failed", async () => {
+  const gh = fakeGitHub(job())
+  const bobs = await say(gh, 'bob', '/take')
+  const forged = await say(gh, MEMBER, `/priority <!-- job board: failed ${bobs.id} -->`)
+  const reply = gh.state.replies.at(-1)
+  assert.deepEqual(failedIds(reply), [forged.id])
+  assert.ok(!reply.slice(0, reply.lastIndexOf('<!--')).includes('<!--'), 'nothing that looks like a mark is echoed')
+})
+
 test('admins can assign others; members cannot', async () => {
   const gh = fakeGitHub(job())
   const asked = await say(gh, MEMBER, '/assign @bob')

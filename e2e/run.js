@@ -921,11 +921,22 @@ async function main() {
   await p.click('.page-head >> text=New job')
   assert.equal(await p.locator('.vis-opt:has-text("Admins only")').isDisabled(), true)
   await p.waitForSelector('.vis-hint:has-text("Sign in again with the repo scope")')
-  await p.keyboard.press('Escape')
   step('admin with a public_repo token: private option is off and says why')
+
+  // Following that hint keeps the draft: a new token for the same account isn't a new session.
+  await p.fill('.modal input.input-lg', 'Draft that should survive')
+  await p.click('.vis-hint button:has-text("Sign in again with the repo scope")')
+  await p.fill('.modal input[type=password] >> nth=-1', 'admin-repo-token')
+  await p.click('.modal button:has-text("Connect")')
+  await p.waitForFunction(() => document.querySelectorAll('.modal').length === 1)
+  assert.equal(await p.inputValue('.modal input.input-lg'), 'Draft that should survive')
+  await p.waitForSelector('.vis-opt:has-text("Admins only"):not(:disabled)')
+  await p.close() // its refreshes would read the private repo the next steps keep an eye on
+  step('signing in again with the repo scope from the form keeps the draft and turns private jobs on')
 
   // The companion repository was created public by mistake: private jobs must stay off.
   P.isPrivate = false
+  P.calls.length = 0
   const admin2 = await newPage()
   await admin2.goto(BASE + '#/jobs')
   await admin2.click('header >> text=Sign in')

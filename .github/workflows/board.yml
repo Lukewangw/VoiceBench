@@ -71,22 +71,27 @@ jobs:
           retries: 3
           script: |
             // A push (or a manual run) brings its own commit, and this job only runs once its tests
-            // pass. Issue, comment and scheduled runs use the newest commit pushed to main whose Test
-            // job passed, so untested code (a pull request's branch, say) never runs here.
+            // pass. Issue, comment and scheduled runs use the newest commit on main whose Test job
+            // passed in a push or manual run, so untested code (a pull request's branch) never runs.
             if (['push', 'workflow_dispatch'].includes(context.eventName)) return core.setOutput('sha', context.sha)
-            const { data } = await github.rest.actions.listWorkflowRuns({
-              ...context.repo,
-              workflow_id: 'board.yml',
-              branch: 'main',
-              event: 'push',
-              per_page: 30,
-            })
-            for (const run of data.workflow_runs) {
+            const runs = []
+            for (const event of ['push', 'workflow_dispatch']) {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                ...context.repo,
+                workflow_id: 'board.yml',
+                branch: 'main',
+                event,
+                per_page: 20,
+              })
+              runs.push(...data.workflow_runs)
+            }
+            runs.sort((a, b) => b.created_at.localeCompare(a.created_at))
+            for (const run of runs) {
               const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({ ...context.repo, run_id: run.id })
               if (jobs.jobs.some((job) => job.name === 'Test' && job.conclusion === 'success'))
                 return core.setOutput('sha', run.head_sha)
             }
-            core.setFailed('None of the last 30 pushes to main passed its tests, so nothing ran.')
+            core.setFailed('None of the recent pushes or manual runs on main passed its tests, so nothing ran.')
       - uses: actions/checkout@v7
         if: steps.tested.outputs.sha != ''
         with:
@@ -147,22 +152,27 @@ jobs:
           retries: 3
           script: |
             // A push (or a manual run) brings its own commit, and this job only runs once its tests
-            // pass. Issue, comment and scheduled runs use the newest commit pushed to main whose Test
-            // job passed, so untested code (a pull request's branch, say) never runs here.
+            // pass. Issue, comment and scheduled runs use the newest commit on main whose Test job
+            // passed in a push or manual run, so untested code (a pull request's branch) never runs.
             if (['push', 'workflow_dispatch'].includes(context.eventName)) return core.setOutput('sha', context.sha)
-            const { data } = await github.rest.actions.listWorkflowRuns({
-              ...context.repo,
-              workflow_id: 'board.yml',
-              branch: 'main',
-              event: 'push',
-              per_page: 30,
-            })
-            for (const run of data.workflow_runs) {
+            const runs = []
+            for (const event of ['push', 'workflow_dispatch']) {
+              const { data } = await github.rest.actions.listWorkflowRuns({
+                ...context.repo,
+                workflow_id: 'board.yml',
+                branch: 'main',
+                event,
+                per_page: 20,
+              })
+              runs.push(...data.workflow_runs)
+            }
+            runs.sort((a, b) => b.created_at.localeCompare(a.created_at))
+            for (const run of runs) {
               const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({ ...context.repo, run_id: run.id })
               if (jobs.jobs.some((job) => job.name === 'Test' && job.conclusion === 'success'))
                 return core.setOutput('sha', run.head_sha)
             }
-            core.setFailed('None of the last 30 pushes to main passed its tests, so nothing ran.')
+            core.setFailed('None of the recent pushes or manual runs on main passed its tests, so nothing ran.')
       - uses: actions/checkout@v7
         if: steps.tested.outputs.sha != ''
         with:
