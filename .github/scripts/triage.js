@@ -16,6 +16,7 @@ import {
   boardStatus,
   failureReply,
   hasLabel,
+  isClearDue,
   isPriorityLabel,
   isRecord,
   labelNames,
@@ -322,7 +323,7 @@ export function createBot({ github, core, owner, repo, number }) {
       },
       async due(arg) {
         if (!canEditDetails()) return 'only admins can change the due date.'
-        const clear = /^(|none|clear|remove|-)$/i.test(arg.trim())
+        const clear = isClearDue(arg)
         const due = clear ? null : parseDue(arg)
         if (!clear && !due) return 'I could not read that date. Try `/due 2026-10-20`.'
         if (parseBody(issue.body).due !== due) {
@@ -335,8 +336,7 @@ export function createBot({ github, core, owner, repo, number }) {
     const problems = []
     for (const command of commands) {
       const problem = await handlers[command.name](command.arg)
-      if (problem)
-        problems.push({ command: `/${command.name}${command.arg ? ' ' + command.arg : ''}`, reason: problem })
+      if (problem) problems.push({ command, reason: problem })
     }
     await react(comment, problems.length ? 'confused' : '+1')
     if (problems.length) {

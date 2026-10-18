@@ -392,20 +392,37 @@ export function failedIds(text) {
   return m ? [Number(m[1])] : []
 }
 
-/** Text the bot repeats back, with nothing in it that could pass for one of its hidden marks. */
+/** Text the bot repeats back in code: nothing that could pass for a hidden mark, or end the code early. */
 export function quoteSafely(text) {
-  return String(text ?? '').replace(/<!--|-->/g, '')
+  return String(text ?? '')
+    .replace(/<!--|-->/g, '')
+    .replace(/`/g, "'")
 }
 
 /** The bot's answer to a comment it couldn't carry out: each command and why, then the mark. */
 export function failureReply(actor, problems, commentId) {
-  const lines = problems.map(({ command, reason }) => `- \`${quoteSafely(command)}\`: ${reason}`)
+  const lines = problems.map(({ command, reason }) => `- \`${quotedCommand(command)}\`: ${reason}`)
   return `@${actor} I couldn't do that:\n${lines.join('\n')}\n\n${failedNote(commentId)}`
+}
+
+/** The commands (as quoted) and reasons in such an answer. */
+export function failureLines(text) {
+  return [...String(text ?? '').matchAll(/^- `([^`\n]*)`: (.+)$/gm)].map((m) => ({ command: m[1], reason: m[2].trim() }))
 }
 
 /** The reasons given in such an answer. */
 export function failureReasons(text) {
-  return [...String(text ?? '').matchAll(/^- `[^`\n]*`: (.+)$/gm)].map((m) => m[1].trim())
+  return failureLines(text).map((line) => line.reason)
+}
+
+/** How a command reads in such an answer (the bot quotes each one this way). */
+export function quotedCommand({ name, arg }) {
+  return quoteSafely(`/${name}${arg ? ' ' + arg : ''}`)
+}
+
+/** "/due none" (or clear, remove, -, nothing): the due date goes away. */
+export function isClearDue(arg) {
+  return /^(|none|clear|remove|-)$/i.test(String(arg ?? '').trim())
 }
 
 export function isRecord(text) {

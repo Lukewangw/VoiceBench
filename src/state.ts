@@ -450,11 +450,12 @@ export function useBoard(auth: Auth): Board {
    * a minute. Show the expected result now, poll GitHub until it's real, then let go.
    */
   const waitForBot = useCallback(
-    (job: Job, { label, expect, isDone, success, failure, commandId }: BotWait) => {
+    (job: Job, { label, expect, isDone, success, failure, command }: BotWait) => {
       // Its action started before a sign-out (or a sign-in as someone else): nothing to wait for.
       if (api !== currentApi.current) return
       const { key } = job
-      const since = new Date(Date.now() - 60_000).toISOString()
+      // GitHub's clock, not this device's: the bot's answer comes after the command.
+      const since = command.created_at
       clearTimeout(timers.current.get(key))
       overlays.current.set(key, expect)
       setPending((p) => ({ ...p, [key]: label }))
@@ -474,7 +475,7 @@ export function useBoard(auth: Auth): Board {
           const recent = await api.get<RawComment[]>(
             `/repos/${job.repo}/issues/${job.number}/comments?since=${since}&per_page=100`,
           )
-          refusal = recent.find((c) => toPerson(c.user).isBot && failedIds(c.body).includes(commandId))
+          refusal = recent.find((c) => toPerson(c.user).isBot && failedIds(c.body).includes(command.id))
         } catch {
           // try again next round
         }
@@ -549,7 +550,7 @@ interface BotWait {
   /** Shown with the bot's reason if it can't do it ("Couldn't pick this up"). */
   failure: string
   /** The command's comment, which the bot's answer names. */
-  commandId: number
+  command: RawComment
 }
 
 function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps) {
@@ -675,7 +676,7 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         isDone: (j) => isOn(j, v.login),
         success: "You're on it",
         failure: "Couldn't pick this up",
-        commandId: posted.id,
+        command: posted,
       })
     },
 
@@ -697,7 +698,7 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         isDone: (j) => !isOn(j, v.login),
         success: 'Dropped. It is up for grabs again.',
         failure: "Couldn't drop this",
-        commandId: posted.id,
+        command: posted,
       })
     },
 
@@ -716,7 +717,7 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         isDone: (j) => j.status === 'done',
         success: 'Marked done 🎉',
         failure: "Couldn't mark this done",
-        commandId: posted.id,
+        command: posted,
       })
     },
 
@@ -735,7 +736,7 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         isDone: (j) => j.status !== 'done' && j.status !== 'closed',
         success: 'Reopened',
         failure: "Couldn't reopen this",
-        commandId: posted.id,
+        command: posted,
       })
     },
 
@@ -755,7 +756,7 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         isDone: (j) => j.priority === key,
         success: 'Priority updated',
         failure: "Couldn't change the priority",
-        commandId: posted.id,
+        command: posted,
       })
     },
 
@@ -789,7 +790,7 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
           isDone: (j) => j.priority === input.priority,
           success: 'Saved',
           failure: "Couldn't change the priority",
-          commandId: posted.id,
+          command: posted,
         })
       } else {
         toast('Saved')

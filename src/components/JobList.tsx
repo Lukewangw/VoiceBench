@@ -53,8 +53,9 @@ interface ListProps {
   jobs: Job[]
   /** Declined proposals (Others) or cancelled jobs (Done), shown folded away under the list. */
   closed: Job[]
-  /** How many jobs each tab has for the current search. */
+  /** How many jobs each tab has for the current search, and how many more are folded away there. */
   counts: Record<Tab, number>
+  folded: Record<Tab, number>
   othersCount: number
   query: string
   onClearQuery(): void
@@ -70,6 +71,7 @@ export function JobList({
   jobs,
   closed,
   counts,
+  folded,
   othersCount,
   query,
   onClearQuery,
@@ -95,7 +97,7 @@ export function JobList({
     if (!r || shown.some((j) => j.key === r.key)) return
     refocus.current = null
     if (document.activeElement && document.activeElement !== document.body) return
-    const rows = document.querySelectorAll<HTMLElement>('.list .row-link')
+    const rows = document.querySelectorAll<HTMLElement>('main > .card .row-link')
     ;(rows[Math.min(r.index, rows.length - 1)] ?? document.querySelector<HTMLElement>('.tab.active'))?.focus()
   }, [shown])
   const approve = async (job: Job, index: number) => {
@@ -135,9 +137,11 @@ export function JobList({
             <div className="empty-title">Nothing here matches “{query}”</div>
             <div className="empty-text">
               {(() => {
-                const elsewhere = TABS.filter((t) => t.key !== tab && counts[t.key] > 0)
+                const elsewhere = TABS.filter((t) => t.key !== tab && counts[t.key] + folded[t.key] > 0)
                 if (closed.length) return `${closed.length} ${tab === 'others' ? 'declined' : 'cancelled'} below.`
                 if (!elsewhere.length) return 'Try another word, a name, or a number like #12.'
+                const hits = (t: Tab) =>
+                  counts[t] ? String(counts[t]) : `${folded[t]} ${t === 'others' ? 'declined' : 'cancelled'}`
                 return (
                   <>
                     Found in{' '}
@@ -145,7 +149,7 @@ export function JobList({
                       <span key={t.key}>
                         {i > 0 && ' and '}
                         <a href={`#/${t.key}`}>
-                          {t.label} ({counts[t.key]})
+                          {t.label} ({hits(t.key)})
                         </a>
                       </span>
                     ))}

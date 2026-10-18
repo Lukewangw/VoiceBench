@@ -165,9 +165,18 @@ const comment = (num, login, body, h, extra = {}) => ({
 
 // A member tried an admin-only command; the bot said no (😕 and a reply naming it), then a teammate 👍'd it.
 const approveAttempt = comment(1, 'dana', '/approve', 25.2, { reactions: { '+1': 1, confused: 1 } })
+// Two commands at once: the first went through, the second didn't.
+const halfDone = comment(1, 'sam', '/take\n/due tomorrow', 24.9, { reactions: { '+1': 0, confused: 1 } })
 
 export const comments = [
   approveAttempt,
+  halfDone,
+  comment(
+    1,
+    'bot',
+    `@sam I couldn't do that:\n- \`/due tomorrow\`: I could not read that date.\n\n<!-- job board: failed ${halfDone.id} -->`,
+    24.8,
+  ),
   comment(
     1,
     'bot',

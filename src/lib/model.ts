@@ -2,7 +2,7 @@ import {
   JOB_LABEL,
   boardStatus,
   failedIds,
-  failureReasons,
+  failureLines,
   hasLabel,
   isCommandOnly,
   labelNames,
@@ -65,8 +65,8 @@ export interface Note {
   commandOnly: boolean
   /** The command didn't go through (the bot said so, or reacted 😕 without a 👍). */
   failed: boolean
-  /** Why not, from the bot's answer. */
-  failedBecause?: string
+  /** Which of its commands the bot couldn't carry out, and why (from its answer). */
+  failures?: { command: string; reason: string }[]
   /** A bot answer about a command in this list: shown with that command instead of on its own. */
   answers?: number
 }
@@ -120,9 +120,13 @@ export function withFailures(notes: Note[]): Note[] {
   const ids = new Set(notes.map((n) => n.id))
   return notes.map((n) => {
     const reply = answer.get(n.id)
-    if (reply) return { ...n, failed: true, failedBecause: failureReasons(reply.body).join('; ') || undefined }
+    if (reply) {
+      const failures = failureLines(reply.body)
+      return { ...n, failed: true, failures: failures.length ? failures : undefined }
+    }
+    // A reply is shown with the command it answers, as long as it can be read; otherwise on its own.
     const about = n.author.isBot ? failedIds(n.body).find((id) => ids.has(id)) : undefined
-    return about === undefined ? n : { ...n, answers: about }
+    return about === undefined || !failureLines(n.body).length ? n : { ...n, answers: about }
   })
 }
 

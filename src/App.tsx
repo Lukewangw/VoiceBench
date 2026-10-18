@@ -101,9 +101,21 @@ export function App() {
   }, [selected])
 
   const closeDrawer = useCallback(() => go(route.tab), [go, route.tab])
-  const openSignIn = useCallback((why?: SignInFor) => setSigningIn({ repo: why?.repo, take: why?.take }), [])
+  // Why the dialog is open right now (a ref, so a sign-in that finishes later sees the latest).
+  const signInFor = useRef<SignInFor | null>(null)
+  const openSignIn = useCallback((why?: SignInFor) => {
+    signInFor.current = { repo: why?.repo, take: why?.take }
+    setSigningIn(signInFor.current)
+  }, [])
   const closeForm = useCallback(() => setForm(null), [])
-  const closeSignIn = useCallback(() => setSigningIn(null), [])
+  const closeSignIn = useCallback(() => {
+    signInFor.current = null
+    setSigningIn(null)
+  }, [])
+  // A pick-up waiting on a sign-in is for that job, right then: not for later, or another job.
+  const openJob = useRef(route.job)
+  openJob.current = route.job
+  useEffect(() => setResume(null), [route.job])
 
   const submitForm = async (input: JobInput) => {
     if (form?.job) {
@@ -220,6 +232,7 @@ export function App() {
                   jobs={lists[route.tab]}
                   closed={route.tab === 'others' ? lists.declined : route.tab === 'done' ? lists.cancelled : []}
                   counts={counts}
+                  folded={{ jobs: 0, others: lists.declined.length, done: lists.cancelled.length }}
                   othersCount={waitingProposals}
                   query={query}
                   onClearQuery={() => setQuery('')}
@@ -273,7 +286,9 @@ export function App() {
           onSignIn={async (token, remember) => {
             const v = await auth.signIn(token, remember)
             toast(`Signed in as @${v.login}${v.isAdmin ? ' · admin' : ''}`)
-            if (signingIn.take) setResume(signingIn.take)
+            // Still there for it (not closed meanwhile, same job open): do what they came for.
+            const take = signInFor.current?.take
+            if (take && take === openJob.current) setResume(take)
             return v
           }}
           onClose={closeSignIn}

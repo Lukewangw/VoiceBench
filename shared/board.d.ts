@@ -47,8 +47,11 @@ export function isRecord(text: string | null | undefined): boolean
 export function failedNote(commentId: number): string
 export function failedIds(text: string | null | undefined): number[]
 export function quoteSafely(text: string | null | undefined): string
-export function failureReply(actor: string, problems: { command: string; reason: string }[], commentId: number): string
+export function failureReply(actor: string, problems: { command: Command; reason: string }[], commentId: number): string
+export function failureLines(text: string | null | undefined): { command: string; reason: string }[]
 export function failureReasons(text: string | null | undefined): string[]
+export function quotedCommand(command: Command): string
+export function isClearDue(arg: string | null | undefined): boolean
 export function stripCommands(text: string | null | undefined): string
 export function isCommandOnly(text: string | null | undefined): boolean
 export function mentionedUser(arg: string | null | undefined): string | null

@@ -718,6 +718,13 @@ button {
 .row:not(.skeleton):hover {
   background: var(--surface-hover);
 }
+/* People and the date always sit in the last two columns, so dates line up whatever else a row has. */
+.row > .avatar-stack {
+  grid-column: 4;
+}
+.row > .due {
+  grid-column: 5;
+}
 .row-link {
   position: absolute;
   inset: 0;
@@ -1839,7 +1846,7 @@ textarea.input {
 
 /* Messages never cover the buttons people need next: above a job's footer, or at the top of a form. */
 body:has(.drawer-layer) .toasts {
-  bottom: calc(88px + env(safe-area-inset-bottom));
+  bottom: calc(var(--drawer-foot, 70px) + 18px);
 }
 body:has(.modal-layer) .toasts {
   top: 16px;
@@ -1969,6 +1976,12 @@ body:has(.modal-layer) .toasts {
     grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     gap: 10px;
     padding: 12px 14px;
+  }
+  .drawer-foot {
+    flex-wrap: wrap;
+  }
+  .drawer-foot .foot-note {
+    flex-basis: 100%;
   }
   /* "Due" above "Oct 28" keeps the date column narrow. */
   .row .due-label {

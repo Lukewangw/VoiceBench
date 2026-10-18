@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   PRIORITIES,
+  isClearDue,
   mentionedUser,
   parseDue,
+  quotedCommand,
   parsePriority,
   priorityLabel,
   type Command,
@@ -100,6 +102,20 @@ export function JobDrawer({
     if (active && active !== document.body && active !== panel && panel.contains(active)) return
     ;(panel.contains(from) && !from.matches(':disabled') ? from : panel).focus()
   }, [busy])
+
+  // Messages sit above the footer, however tall it gets (a reason box, a note on a phone).
+  const footRef = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const foot = footRef.current
+    if (!foot) return
+    const root = document.documentElement
+    const observer = new ResizeObserver(() => root.style.setProperty('--drawer-foot', `${foot.offsetHeight}px`))
+    observer.observe(foot)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--drawer-foot')
+    }
+  })
 
   // Signed in from Pick up: do what they came for.
   useEffect(() => {
@@ -315,7 +331,7 @@ export function JobDrawer({
         </div>
 
         {(primary || declining) && (
-          <div className="drawer-foot">
+          <div className="drawer-foot" ref={footRef}>
             {/* The reason goes where the buttons were, right by whatever asked for it. */}
             {declining ? (
               <DeclineForm
@@ -462,59 +478,36 @@ function DeclineForm({
   )
 }
 
-function describe(c: Command, isJob: boolean): string {
+// How a command reads in the activity: done, or only tried.
+function phrase(c: Command, isJob: boolean, tried: boolean): string {
   const who = mentionedUser(c.arg)
+  const say = (did: string, todo: string) => (tried ? `tried to ${todo}` : did)
   switch (c.name) {
     case 'take':
-      return who ? `assigned @${who}` : 'picked this up'
+      return who ? say(`assigned @${who}`, `assign @${who}`) : say('picked this up', 'pick this up')
     case 'drop':
-      return who ? `took @${who} off this` : 'dropped this'
+      return who ? say(`took @${who} off this`, `take @${who} off this`) : say('dropped this', 'drop this')
     case 'done':
-      return 'marked this done'
+      return say('marked this done', 'mark this done')
     case 'reopen':
-      return 'reopened this'
+      return say('reopened this', 'reopen this')
     case 'approve':
-      return 'approved this'
+      return say('approved this', 'approve this')
     case 'reject': {
-      const verb = isJob ? 'cancelled this' : 'declined this'
+      const verb = isJob ? say('cancelled this', 'cancel this') : say('declined this', 'decline this')
       return c.arg ? `${verb}: “${c.arg}”` : verb
     }
     case 'priority': {
       const p = parsePriority(c.arg)
-      return p ? `set priority to ${priorityLabel(p)}` : 'changed the priority'
+      return p
+        ? say(`set priority to ${priorityLabel(p)}`, `set priority to ${priorityLabel(p)}`)
+        : say('changed the priority', 'change the priority')
     }
     case 'due': {
+      if (isClearDue(c.arg)) return say('cleared the due date', 'clear the due date')
       const d = parseDue(c.arg)
-      return d ? `set the due date to ${dueShort(d)}` : 'cleared the due date'
-    }
-  }
-}
-
-// What a command that didn't go through was trying to do.
-function attempt(c: Command, isJob: boolean): string {
-  const who = mentionedUser(c.arg)
-  switch (c.name) {
-    case 'take':
-      return who ? `tried to assign @${who}` : 'tried to pick this up'
-    case 'drop':
-      return who ? `tried to take @${who} off this` : 'tried to drop this'
-    case 'done':
-      return 'tried to mark this done'
-    case 'reopen':
-      return 'tried to reopen this'
-    case 'approve':
-      return 'tried to approve this'
-    case 'reject': {
-      const verb = isJob ? 'tried to cancel this' : 'tried to decline this'
-      return c.arg ? `${verb}: “${c.arg}”` : verb
-    }
-    case 'priority': {
-      const p = parsePriority(c.arg)
-      return p ? `tried to set priority to ${priorityLabel(p)}` : 'tried to change the priority'
-    }
-    case 'due': {
-      const d = parseDue(c.arg)
-      return d ? `tried to set the due date to ${dueShort(d)}` : 'tried to clear the due date'
+      const when = d ? dueShort(d) : `“${c.arg}”`
+      return say(`set the due date to ${when}`, `set the due date to ${when}`)
     }
   }
 }
@@ -522,18 +515,35 @@ function attempt(c: Command, isJob: boolean): string {
 function Activity({ job, notes }: { job: Job; notes: Note[] }) {
   // The bot's answers to commands that didn't go through are shown with those commands.
   const sorted = notes.filter((n) => n.answers === undefined).sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+  // A command didn't go through if the bot's answer names it (or, without one, if the comment failed).
+  const failure = (n: Note, c: Command) =>
+    n.failures ? n.failures.find((f) => f.command === quotedCommand(c)) : n.failed ? { reason: '' } : undefined
+  // "Declined" (a proposal) or "cancelled" (a job) follows what it was at that point: an approval in
+  // its history means it started out as a proposal.
+  const approved = sorted.some((n) => n.commands.some((c) => c.name === 'approve' && !failure(n, c)))
+  let isJob = job.isJob && !approved
+  const startedAsJob = isJob
+  const lines = sorted.map((n) => ({
+    n,
+    parts: n.commands.map((c) => {
+      const failed = failure(n, c)
+      const text = phrase(c, isJob, !!failed)
+      if (!failed && c.name === 'approve') isJob = true
+      return { text, failed }
+    }),
+  }))
   return (
     <ol className="timeline">
       <li className="event">
         <Avatar person={job.author} size={18} />
         <span>
-          <strong>{job.author.login}</strong> {job.isJob ? 'posted this' : 'proposed this'}
+          <strong>{job.author.login}</strong> {startedAsJob ? 'posted this' : 'proposed this'}
         </span>
         <time className="event-time" dateTime={job.createdAt}>
           {timeAgo(job.createdAt)}
         </time>
       </li>
-      {sorted.flatMap((n) => [
+      {lines.flatMap(({ n, parts }) => [
         n.text && (
           <li key={`c${n.id}`} className={`comment${n.author.isBot ? ' comment-bot' : ''}`}>
             <div className="comment-head">
@@ -546,17 +556,20 @@ function Activity({ job, notes }: { job: Job; notes: Note[] }) {
             <Markdown text={n.text} className="comment-body" />
           </li>
         ),
-        n.commands.length > 0 && (
-          <li key={`e${n.id}`} className={`event${n.failed ? ' failed' : ''}`}>
+        parts.length > 0 && (
+          <li key={`e${n.id}`} className={`event${parts.every((p) => p.failed) ? ' failed' : ''}`}>
             <Avatar person={n.author} size={18} />
             <span className="event-text">
               <strong>{n.author.login}</strong>{' '}
-              {n.failed
-                ? n.commands.map((c) => attempt(c, job.isJob)).join(', ')
-                : n.commands.map((c) => describe(c, job.isJob)).join(', ')}
-              {n.failed && (
-                <span className="muted">{n.failedBecause ? `: ${n.failedBecause}` : " (didn't go through)"}</span>
-              )}
+              {parts.map((p, i) => (
+                <span key={i} className={p.failed ? 'event-failed' : undefined}>
+                  {i > 0 && ', '}
+                  {p.text}
+                  {p.failed && (
+                    <span className="muted">{p.failed.reason ? `: ${p.failed.reason}` : " (didn't go through)"}</span>
+                  )}
+                </span>
+              ))}
             </span>
             <time className="event-time" dateTime={n.createdAt}>
               {timeAgo(n.createdAt)}

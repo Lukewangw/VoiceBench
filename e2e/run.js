@@ -209,6 +209,7 @@ async function main() {
     // A token GitHub doesn't know (revoked, expired) gets nothing.
     if (token && !who) return respond(route, 401, { message: 'Bad credentials' })
 
+    if (path === '/user' && S.userDelay) await sleep(S.userDelay)
     if (path === '/user')
       return who
         ? respond(route, 200, fx.user(who), { 'x-oauth-scopes': SCOPES[token] })
@@ -704,6 +705,10 @@ async function main() {
   await p.waitForSelector('.empty-text:has-text("1 declined below")')
   assert.equal(await p.locator('.closed-section[open] .row').count(), 1)
   await p.fill('.search input', '')
+  await p.goto(BASE + '#/jobs')
+  await p.fill('.search input', 'Mandarin')
+  await p.waitForSelector('.empty-text a:has-text("Others (1 declined)")')
+  await p.fill('.search input', '')
   step('declined a proposal with a reason; it stays findable under Others')
   await p.screenshot({ path: OUT + '/12-admin-others.png' })
 
@@ -829,6 +834,11 @@ async function main() {
   )
   await nav.locator('.drawer .event.failed').first().scrollIntoViewIfNeeded()
   await nav.screenshot({ path: OUT + '/35-failed-lines.png' })
+  assert.equal(
+    await nav.locator('.drawer .event:has(.event-failed):not(.failed) .event-text').innerText(),
+    'sam picked this up, tried to set the due date to “tomorrow”: I could not read that date.',
+    'a comment that half went through says which half',
+  )
   assert.equal(
     await nav.locator('.drawer .comment:has-text("I couldn\'t do that")').count(),
     0,
@@ -1109,6 +1119,10 @@ async function main() {
     await phoneAdmin.locator('.row .row-action').count(),
     'icon-only Approve buttons still have a name',
   )
+  const rights = await phoneAdmin
+    .locator('main > .card .row > .due')
+    .evaluateAll((cells) => cells.map((cell) => Math.round(cell.getBoundingClientRect().right)))
+  assert.equal(new Set(rights).size, 1, `dates line up on a phone: ${rights}`)
   step('phone screens: list, job, sign-in and form fit without sideways scrolling; icon buttons keep names')
 
   // ---------------- Sessions and stale copies ----------------
@@ -1224,6 +1238,43 @@ async function main() {
   const refused = S.comments.filter((c) => c.id > beforeRefusal && c.reactions?.confused).map((c) => c.id)
   assert.equal(refused.length, 1, 'just the one command, refused on purpose')
   step("a command the bot refuses stops the wait at once, with the bot's reason")
+
+  // Someone clicks Pick up, signs in, and closes the dialog while it's still working: nothing is picked up.
+  // (A visitor sees the published snapshot, so the job has to be one from it; sam isn't on #1.)
+  const beforeQuit = S.nextComment
+  const quitter = await newPage()
+  await quitter.goto(BASE + '#/jobs/1')
+  await quitter.click('.drawer-foot button:has-text("Pick up")')
+  await quitter.fill('.modal input[type=password]', 'member-token')
+  S.userDelay = 1500
+  await quitter.click('.modal button[type=submit]:has-text("Sign in")')
+  await quitter.keyboard.press('Escape')
+  await quitter.waitForSelector('.toast:has-text("Signed in as @sam")')
+  await sleep(2000)
+  S.userDelay = 0
+  assert.deepEqual(
+    S.comments.filter((c) => c.id > beforeQuit).map((c) => c.body),
+    [],
+    'nothing posted: no /take',
+  )
+  assert.ok(!issue(1).assignees.some((a) => a.login === 'sam'))
+  step('closing the sign-in while it works means no pick-up')
+
+  // A proposal declined and later approved after all: the decline still reads as a decline.
+  const lead = await newPage()
+  await lead.goto(BASE + '#/others')
+  await lead.click('header >> text=Sign in')
+  await lead.fill('.modal input[type=password]', 'admin-token')
+  await lead.click('.modal button[type=submit]:has-text("Sign in")')
+  await lead.waitForSelector('.badge-admin')
+  await lead.goto(BASE + '#/others/8')
+  await lead.click('.drawer-foot button:has-text("Approve after all")')
+  await lead.waitForSelector('.drawer .event:has-text("approved this")')
+  assert.equal(
+    await lead.locator('.drawer .event:has-text("Not this quarter") .event-text').innerText(),
+    'lead declined this: “Not this quarter”',
+  )
+  step('a decline stays a decline in the activity after the proposal is approved after all')
 
   await Promise.all(S.botRuns)
   const confused = S.comments.filter((c) => c.reactions?.confused && c.id > 5000 && !refused.includes(c.id))
