@@ -9,6 +9,7 @@ import { Icon, loadMarkdown } from './components/ui'
 import { REPO, REPO_URL, TITLE } from './config'
 import { byPriority, byRecentlyClosed, type Job } from './lib/model'
 import { matchesQuery } from './lib/search'
+import { isDialogOpen } from './lib/useDialog'
 import { errorText, useAuth, useBoard, type JobInput } from './state'
 import { toast } from './toast'
 
@@ -120,7 +121,7 @@ export function App() {
       if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
       const target = e.target instanceof HTMLElement ? e.target : null
       if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
-      if (document.querySelector('.drawer, .modal')) return
+      if (isDialogOpen()) return
       if (e.key === '/') {
         e.preventDefault()
         searchRef.current?.focus()
@@ -141,7 +142,7 @@ export function App() {
 
   return (
     <>
-      <div className="shell" inert={!!selected || !!form || signingIn}>
+      <div className="shell">
         <Header
           viewer={viewer}
           syncedAt={board.syncedAt}
@@ -227,7 +228,6 @@ export function App() {
           onClose={closeDrawer}
           onEdit={(job) => setForm({ job })}
           onSignIn={openSignIn}
-          inert={!!form || signingIn}
         />
       )}
       {form && (
@@ -248,6 +248,7 @@ export function App() {
             return v
           }}
           onClose={closeSignIn}
+          defaultRemember={auth.remembered}
         />
       )}
       <Toasts />

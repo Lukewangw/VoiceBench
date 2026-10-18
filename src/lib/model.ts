@@ -1,6 +1,7 @@
 import {
   JOB_LABEL,
   boardStatus,
+  hasLabel,
   isCommandOnly,
   labelNames,
   parseBody,
@@ -38,6 +39,8 @@ export interface Job {
   priority: PriorityKey | null
   due: string | null
   status: BoardStatus
+  /** Approved as a job (vs. a proposal), whatever state it is in now. */
+  isJob: boolean
   author: Person
   assignees: Person[]
   labels: string[]
@@ -89,6 +92,7 @@ export function toJob(raw: RawIssue, source: Source): Job {
     priority: priorityFromLabels(raw.labels) ?? fields.priority,
     due: fields.due,
     status: boardStatus({ ...raw, labels }),
+    isJob: hasLabel(labels, JOB_LABEL),
     author: toPerson(raw.user),
     assignees: (raw.assignees ?? []).map(toPerson),
     labels: labelNames(raw.labels),

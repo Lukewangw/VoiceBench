@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { priorityName, type PriorityKey } from '../../shared/board.js'
 import { dueRelative, dueShort, dueTone } from '../lib/format'
 import type { Person } from '../lib/model'
@@ -193,6 +193,7 @@ export function loadMarkdown() {
 
 export function Markdown({ text, className = '' }: { text: string; className?: string }) {
   const [html, setHtml] = useState(() => markdown?.renderMarkdown(text) ?? null)
+  const ref = useRef<HTMLDivElement>(null)
   useEffect(() => {
     let live = true
     if (markdown) setHtml(markdown.renderMarkdown(text))
@@ -201,6 +202,9 @@ export function Markdown({ text, className = '' }: { text: string; className?: s
       live = false
     }
   }, [text])
+  useLayoutEffect(() => {
+    if (html !== null && ref.current) markdown?.labelTaskBoxes(ref.current)
+  }, [html])
   if (html === null) return <div className={`markdown markdown-plain ${className}`}>{text}</div>
-  return <div className={`markdown ${className}`} dangerouslySetInnerHTML={{ __html: html }} />
+  return <div ref={ref} className={`markdown ${className}`} dangerouslySetInnerHTML={{ __html: html }} />
 }

@@ -265,6 +265,16 @@ test('records from people without the rights get a 😕', async () => {
   assert.deepEqual(labels(gh.state), ['P2', 'proposal'])
 })
 
+test('people who were on a job cannot reopen it once an admin cancelled it', async () => {
+  const gh = fakeGitHub({ ...job(), assignees: [{ login: MEMBER }] })
+  await say(gh, ADMIN, '/reject no longer needed')
+  await say(gh, MEMBER, '/reopen')
+  assert.equal(gh.state.issue.state, 'closed')
+  assert.match(gh.state.replies.at(-1), /only admins can reopen a cancelled/)
+  await say(gh, ADMIN, '/reopen')
+  assert.equal(gh.state.issue.state, 'open')
+})
+
 test('admins can assign others; members cannot', async () => {
   const gh = fakeGitHub(job())
   await say(gh, MEMBER, '/assign @bob')

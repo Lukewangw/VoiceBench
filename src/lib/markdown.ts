@@ -15,11 +15,7 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     node.setAttribute('target', '_blank')
     node.setAttribute('rel', 'noopener noreferrer')
   }
-  if (node.tagName === 'INPUT') {
-    node.setAttribute('disabled', '')
-    const item = node.parentElement?.textContent?.trim()
-    node.setAttribute('aria-label', `${node.hasAttribute('checked') ? 'Done' : 'To do'}${item ? `: ${item}` : ''}`)
-  }
+  if (node.tagName === 'INPUT') node.setAttribute('disabled', '')
 })
 
 const OPTIONS = {
@@ -31,4 +27,24 @@ const OPTIONS = {
 // GitHub issue text is untrusted, so it is always sanitized before it reaches the page.
 export function renderMarkdown(text: string): string {
   return DOMPurify.sanitize(marked.parse(text, { async: false }), OPTIONS)
+}
+
+// An item's own text: what it says, without the sub-items listed under it.
+function ownText(node: Node): string {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent ?? ''
+  if (node.nodeName === 'UL' || node.nodeName === 'OL') return ''
+  return [...node.childNodes].map(ownText).join('')
+}
+
+/**
+ * Names each task-list box in rendered Markdown after its item, for screen readers. This runs on
+ * the page itself once the sanitized HTML is in, so it only ever reads text that survived.
+ */
+export function labelTaskBoxes(root: HTMLElement) {
+  for (const box of root.querySelectorAll('input[type="checkbox"]')) {
+    const li = box.closest('li')
+    const item = li && root.contains(li) ? li : box.parentElement
+    const text = item ? ownText(item).replace(/\s+/g, ' ').trim() : ''
+    box.setAttribute('aria-label', text.slice(0, 200) || 'Task')
+  }
 }

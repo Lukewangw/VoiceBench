@@ -494,7 +494,10 @@ async function main() {
   await p.click('.modal button:has-text("Add job")')
   await p.waitForURL(/#\/jobs\/101$/)
   assert.equal(labels(101).join(), 'P0,job')
+  // The URL changes a moment before the drawer is up; Escape before then would go nowhere.
+  await p.waitForSelector('.drawer h2:has-text("Prepare camera-ready figures")')
   await p.keyboard.press('Escape')
+  await p.waitForSelector('.drawer', { state: 'detached' })
   await p.click('header .sync')
   await p.waitForSelector('.toast:has-text("Up to date")')
   assert.equal(
@@ -513,16 +516,47 @@ async function main() {
   await p.goto(BASE + '#/jobs/101')
   await p.click('.drawer .link-btn:has-text("Edit")')
   await p.waitForSelector('.modal')
+  const inert = (...selectors) => p.evaluate((all) => all.map((sel) => document.querySelector(sel)?.inert), selectors)
+  assert.deepEqual(
+    await inert('.shell', '.drawer-layer', '.modal-layer'),
+    [true, true, false],
+    'only the form on top takes input; the page and the drawer under it are inert',
+  )
   await p.keyboard.press('Escape')
   await p.waitForSelector('.modal', { state: 'detached' })
   assert.equal(await p.locator('.drawer').count(), 1, 'Escape closed only the form on top')
-  step('Escape closes the topmost dialog only')
+  assert.deepEqual(await inert('.shell', '.drawer-layer'), [true, false], 'the drawer takes input again')
+  assert.ok(await p.evaluate(() => !!document.activeElement?.closest('.drawer')), 'focus is back in the drawer')
+  step('Escape closes the topmost dialog only; the one under it is inert until then')
   await p.click('.prio-opt:has-text("P2")')
   await until(() => labels(101).join() === 'P2,job', 'priority change')
-  await p.locator('.drawer .date-input').fill('2026-11-20')
-  await until(() => parseBody(issue(101).body).due === '2026-11-20', 'due date change')
-  await p.waitForSelector('.drawer .event:has-text("set the due date to Nov 20")')
-  step('changed priority and due date from the drawer')
+  const dueRecords = () => S.comments.filter((c) => c.issue_number === 101 && /^\/due\b/.test(c.body)).length
+  // Typing a date reports every keystroke: the day passes through 02, the year through 0002, 0020, 0202.
+  await p.locator('.drawer .date-input').evaluate(async (input) => {
+    const setValue = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+    for (const value of ['2026-11-02', '2026-11-25', '0002-11-25', '0020-11-25', '0202-11-25', '2026-11-25']) {
+      setValue.call(input, value)
+      input.dispatchEvent(new Event('input', { bubbles: true }))
+      await new Promise((r) => setTimeout(r, 50))
+    }
+  })
+  await until(() => parseBody(issue(101).body).due === '2026-11-25', 'due date change')
+  await p.waitForSelector('.drawer .event:has-text("set the due date to Nov 25")')
+  await sleep(1500)
+  assert.equal(dueRecords(), 1, 'typing a date saves it once, not once per keystroke')
+  // Retyping one part of a date leaves it half-typed, which reads as empty. That is not clearing it.
+  const dateInput = p.locator('.drawer .date-input')
+  await dateInput.focus()
+  await p.keyboard.press('Backspace')
+  assert.equal(await dateInput.evaluate((input) => input.validity.badInput), true, 'the date is half-typed')
+  await sleep(1500)
+  await p.keyboard.press('Enter')
+  await dateInput.blur()
+  assert.equal(await dateInput.inputValue(), '2026-11-25', 'leaving a half-typed date puts the saved one back')
+  await sleep(500)
+  assert.equal(parseBody(issue(101).body).due, '2026-11-25', 'and the saved date stays')
+  assert.equal(dueRecords(), 1)
+  step('changed priority and due date from the drawer (saved once per date, never from half-typed input)')
 
   await p.goto(BASE + '#/others/8')
   await p.click('.drawer-foot button:has-text("Decline")')
@@ -573,10 +607,15 @@ async function main() {
   )
   assert.equal(await a11y.locator('.drawer .comment img[onerror]').count(), 0)
   assert.equal(await a11y.locator('.drawer .comment a[href^="javascript:"]').count(), 0)
-  assert.equal(
-    await a11y.locator('.drawer .comment input[type=checkbox][disabled]').count(),
-    1,
-    'task lists still render, read-only',
+  assert.deepEqual(
+    await a11y
+      .locator('.drawer .comment input[type=checkbox]')
+      .evaluateAll((boxes) => boxes.map((box) => [box.getAttribute('aria-label'), box.disabled])),
+    [
+      ['a real task list still renders', true],
+      ['its sub-task', true],
+    ],
+    'task lists still render, read-only, each box named after its own item',
   )
   assert.equal(await a11y.evaluate(() => window.__pwned === true), false)
   step('hostile HTML in a comment is stripped: no token field, overlay, fake buttons, scripts or js: links')

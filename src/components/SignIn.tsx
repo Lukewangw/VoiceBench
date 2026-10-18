@@ -7,12 +7,14 @@ import { GitHubMark, Icon, Spinner } from './ui'
 interface Props {
   onSignIn(token: string, remember: boolean): Promise<Viewer>
   onClose(): void
+  /** Start from the current choice, so a session-only sign-in doesn't silently become permanent. */
+  defaultRemember?: boolean
 }
 
-export function SignIn({ onSignIn, onClose }: Props) {
+export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
-  const [remember, setRemember] = useState(true)
+  const [remember, setRemember] = useState(defaultRemember)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
@@ -116,7 +118,7 @@ export function SignIn({ onSignIn, onClose }: Props) {
             <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} />
             <span>
               Stay signed in on this device
-              <small>Untick on a shared computer: you're signed out when this tab closes.</small>
+              <small>Untick on a shared computer to keep the token only for this browser session.</small>
             </span>
           </label>
 

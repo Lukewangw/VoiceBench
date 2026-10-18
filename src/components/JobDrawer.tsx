@@ -27,8 +27,6 @@ interface Props {
   onClose(): void
   onEdit(job: Job): void
   onSignIn(): void
-  /** True while a dialog is open on top of the drawer. */
-  inert?: boolean
 }
 
 const STATUS: Record<Job['status'], { label: string; tone: string; icon: IconName }> = {
@@ -39,19 +37,7 @@ const STATUS: Record<Job['status'], { label: string; tone: string; icon: IconNam
   closed: { label: 'Declined', tone: 'gray', icon: 'ban' },
 }
 
-export function JobDrawer({
-  job,
-  tab,
-  notes,
-  viewer,
-  pending,
-  actions,
-  loadNotes,
-  onClose,
-  onEdit,
-  onSignIn,
-  inert = false,
-}: Props) {
+export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes, onClose, onEdit, onSignIn }: Props) {
   const [busy, setBusy] = useState<string | null>(null)
   const [declining, setDeclining] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -125,7 +111,7 @@ export function JobDrawer({
   }
 
   return (
-    <div className="drawer-layer" inert={inert}>
+    <div className="drawer-layer">
       <div className="drawer-backdrop" onClick={onClose} />
       <div
         className="drawer"
@@ -164,7 +150,7 @@ export function JobDrawer({
           <div className="status-line">
             <span className={`status-chip tone-${status.tone}`}>
               <Icon name={status.icon} size={14} />
-              {job.status === 'closed' && job.labels.includes('job') ? 'Cancelled' : status.label}
+              {job.status === 'closed' && job.isJob ? 'Cancelled' : status.label}
               {job.status === 'done' && job.closedAt && (
                 <span className="status-sub">· {shortDate(new Date(job.closedAt))}</span>
               )}
@@ -305,6 +291,26 @@ function DueField({
   disabled: boolean
   onChange(due: string | null): void
 }) {
+  // Date inputs report every keystroke (typing a year passes through 0002, 0020, 0202...), and a
+  // date with one part cleared reads as empty. So a date is saved once it is complete and the
+  // typing pauses, or on Enter and blur; leaving a half-typed date puts the saved one back.
+  const [draft, setDraft] = useState(job.due ?? '')
+  const timer = useRef<number | undefined>(undefined)
+  const saved = useRef(job.due)
+  saved.current = job.due
+  useEffect(() => setDraft(job.due ?? ''), [job.due])
+  useEffect(() => () => window.clearTimeout(timer.current), [])
+
+  // Cleared on purpose, or a real date (not half-typed, not year 0202).
+  const finished = (input: HTMLInputElement) =>
+    !input.validity.badInput && (!input.value || parseDue(input.value) === input.value)
+
+  const commit = (value: string) => {
+    window.clearTimeout(timer.current)
+    const next = value || null
+    if (!disabled && next !== saved.current) onChange(next)
+  }
+
   const tone = job.due && job.status !== 'done' ? dueTone(job.due) : 'later'
   const text = job.due ? (
     <span className={`due-text due-${tone}`}>
@@ -320,14 +326,34 @@ function DueField({
       <input
         type="date"
         className="date-input"
-        value={job.due ?? ''}
+        value={draft}
         disabled={disabled}
         aria-label="Due date"
-        onChange={(e) => onChange(e.target.value || null)}
+        onChange={(e) => {
+          const { value } = e.target
+          setDraft(value)
+          window.clearTimeout(timer.current)
+          if (finished(e.target)) timer.current = window.setTimeout(() => commit(value), 900)
+        }}
+        onBlur={(e) => {
+          const input = e.currentTarget
+          if (finished(input)) return commit(input.value)
+          window.clearTimeout(timer.current)
+          input.value = saved.current ?? ''
+          setDraft(saved.current ?? '')
+        }}
+        onKeyDown={(e) => e.key === 'Enter' && finished(e.currentTarget) && commit(e.currentTarget.value)}
       />
       {job.due && <span className={`due-hint due-${tone}`}>{job.status !== 'done' ? dueRelative(job.due) : ''}</span>}
       {job.due && (
-        <button className="link-btn" disabled={disabled} onClick={() => onChange(null)}>
+        <button
+          className="link-btn"
+          disabled={disabled}
+          onClick={() => {
+            setDraft('')
+            commit('')
+          }}
+        >
           Clear
         </button>
       )}
@@ -359,7 +385,7 @@ function DeclineForm({
         value={reason}
         placeholder={verb === 'Decline' ? 'e.g. Out of scope for this release' : 'e.g. No longer needed'}
         onChange={(e) => setReason(e.target.value)}
-        onKeyDown={(e) => e.key === 'Enter' && onDecline(reason)}
+        onKeyDown={(e) => e.key === 'Enter' && !busy && onDecline(reason)}
       />
       <div className="decline-actions">
         <button className="btn btn-ghost btn-sm" onClick={onCancel} disabled={busy}>
@@ -465,7 +491,7 @@ function Composer({
     )
   }
   const send = async () => {
-    if (!text.trim()) return
+    if (!text.trim() || sending) return
     setSending(true)
     try {
       await actions.comment(job, text.trim())

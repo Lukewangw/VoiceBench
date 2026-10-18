@@ -54,6 +54,8 @@ export interface Viewer extends Person {
 export interface Auth {
   token: string | null
   viewer: Viewer | null
+  /** False when the current token is kept for this browser session only. */
+  remembered: boolean
   /** `remember: false` keeps the token only until the tab closes. */
   signIn(token: string, remember?: boolean): Promise<Viewer>
   signOut(): void
@@ -103,6 +105,7 @@ export function useAuth(): Auth {
   const checked = useRef<string | null>(null)
 
   const signOut = useCallback(() => {
+    checked.current = null
     for (const store of [storage, sessionStore]) {
       store.remove(TOKEN_KEY)
       store.remove(VIEWER_KEY)
@@ -111,16 +114,19 @@ export function useAuth(): Auth {
     setViewer(null)
   }, [])
 
-  // A saved token may have expired, or admin rights may have changed since last time.
+  // A saved token may have expired, or admin rights may have changed since last time. The answer
+  // only counts if that token is still the one in use (nobody signed in or out meanwhile).
   useEffect(() => {
     if (!token || checked.current === token) return
     checked.current = token
     whoIs(token)
       .then((v) => {
+        if (checked.current !== token) return
         setViewer(v)
         tokenStore()?.set(VIEWER_KEY, JSON.stringify(v))
       })
       .catch((e) => {
+        if (checked.current !== token) return
         if (e instanceof GitHubError && e.status === 401) {
           signOut()
           toast('Your GitHub token expired. Sign in again to make changes.', 'info')
@@ -144,7 +150,9 @@ export function useAuth(): Auth {
     return v
   }, [])
 
-  return { token, viewer, signIn, signOut }
+  // Session-only sign-ins stay session-only when someone signs in again from inside the board.
+  const remembered = tokenStore() !== sessionStore
+  return { token, viewer, remembered, signIn, signOut }
 }
 
 // ---------------------------------------------------------------------------

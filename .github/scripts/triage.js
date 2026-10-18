@@ -235,6 +235,7 @@ export function createBot({ github, core, owner, repo, number }) {
       },
       async reopen() {
         if (issue.state === 'open') return null
+        if (!admin && boardStatus(issue) !== 'done') return 'only admins can reopen a cancelled or declined job.'
         if (!admin && !isAssigned(issue, actor)) return 'only admins (or the people who worked on it) can reopen this.'
         issue = (await github.rest.issues.update({ ...ref, state: 'open' })).data
         return null

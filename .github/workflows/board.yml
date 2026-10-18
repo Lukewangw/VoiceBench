@@ -78,9 +78,9 @@ jobs:
   publish:
     name: Publish the board
     needs: [test, triage]
-    # Not for pull requests, and never with failing tests. Runs when triage was skipped (pushes,
-    # schedule) or failed, so the site stays current.
-    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.test.result != 'failure' }}
+    # Not for pull requests or their comments, and never with failing tests. Runs when triage was
+    # skipped (pushes, schedule) or failed, so the site stays current.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && !(github.event_name == 'issue_comment' && github.event.issue.pull_request) && needs.test.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
