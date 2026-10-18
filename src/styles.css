@@ -10,14 +10,14 @@
   --border-strong: #d2dad6;
   --text: #13201c;
   --text-2: #53615c;
-  --text-3: #8a9792;
+  --text-3: #66736e;
   --accent: #0c8574;
   --accent-hover: #0a7466;
   --accent-bright: #14b8a0;
   --on-accent: #ffffff;
   --accent-soft: #e2f5f0;
   --accent-text: #0b7a6b;
-  --amber: #a86400;
+  --amber: #9a5b00;
   --amber-soft: #fff3d9;
   --blue: #2c55c9;
   --blue-soft: #e9effd;
@@ -29,13 +29,13 @@
   --gray-soft: #eef0f1;
   --violet: #6e56cf;
   --violet-soft: #f1eefc;
-  --p0: #d4363c;
+  --p0: #c42b31;
   --p0-bg: #fdeaeb;
-  --p1: #cc560e;
+  --p1: #b44a0b;
   --p1-bg: #ffefe3;
   --p2: #3456c8;
   --p2-bg: #ebf0fd;
-  --p3: #697079;
+  --p3: #5c636c;
   --p3-bg: #eef0f2;
   --dark: #13201c;
   --dark-hover: #24332e;
@@ -64,7 +64,7 @@
     --border-strong: #32403b;
     --text: #e7efec;
     --text-2: #a2b0aa;
-    --text-3: #6e7c76;
+    --text-3: #7f8c87;
     --accent: #2ac0a8;
     --accent-hover: #46d1bb;
     --accent-bright: #2ac0a8;
@@ -904,7 +904,8 @@ button {
   box-shadow: var(--shadow-lg);
   animation: slide 0.22s cubic-bezier(0.2, 0.8, 0.2, 1);
 }
-.drawer:focus {
+.drawer:focus,
+.modal:focus {
   outline: none;
 }
 .drawer-head {

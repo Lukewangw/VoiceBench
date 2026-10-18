@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { DEFAULT_PRIORITY, PRIORITIES, priorityLabel, type PriorityKey } from '../../shared/board.js'
 import { PRIVATE_REPO, PRIVATE_REPO_URL, REPO_URL } from '../config'
 import { dueRelative, todayYmd } from '../lib/format'
+import { useDialog } from '../lib/useDialog'
 import type { Job } from '../lib/model'
 import { errorText, type JobInput, type Viewer } from '../state'
 import { GitHubMark, Icon, Spinner } from './ui'
@@ -26,12 +27,8 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
   const [error, setError] = useState<string | null>(null)
   const titleRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    titleRef.current?.focus()
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const formRef = useRef<HTMLFormElement>(null)
+  useDialog(formRef, onClose, titleRef)
 
   const editing = !!job
   const isAdmin = !!viewer?.isAdmin
@@ -64,6 +61,8 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
     <div className="modal-layer">
       <div className="modal-backdrop" onClick={onClose} />
       <form
+        ref={formRef}
+        tabIndex={-1}
         className="modal"
         role="dialog"
         aria-modal="true"

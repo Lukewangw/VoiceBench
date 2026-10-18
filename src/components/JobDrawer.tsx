@@ -10,6 +10,7 @@ import {
 } from '../../shared/board.js'
 import { dueLong, dueRelative, dueShort, dueTone, shortDate, timeAgo } from '../lib/format'
 import { isOn, sameLogin, type Job, type Note } from '../lib/model'
+import { useDialog } from '../lib/useDialog'
 import { errorText, type Board, type Viewer } from '../state'
 import { toast } from '../toast'
 import type { Tab } from './JobList'
@@ -40,18 +41,12 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   const [busy, setBusy] = useState<string | null>(null)
   const [declining, setDeclining] = useState(false)
   const panelRef = useRef<HTMLElement>(null)
+  useDialog(panelRef, onClose)
 
   useEffect(() => {
-    panelRef.current?.focus()
     void loadNotes(job)
     setDeclining(false)
   }, [job.key, loadNotes])
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && !document.querySelector('.modal') && onClose()
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     if (!viewer) return onSignIn()

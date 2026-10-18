@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { NEW_ADMIN_TOKEN_URL, NEW_TOKEN_URL, REPO, REPO_URL } from '../config'
+import { useDialog } from '../lib/useDialog'
 import { errorText, type Viewer } from '../state'
 import { GitHubMark, Icon, Spinner } from './ui'
 
@@ -13,12 +14,8 @@ export function SignIn({ onSignIn, onClose }: Props) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [onClose])
+  const formRef = useRef<HTMLFormElement>(null)
+  useDialog(formRef, onClose, inputRef)
 
   const submit = async () => {
     if (!token.trim()) return
@@ -37,6 +34,8 @@ export function SignIn({ onSignIn, onClose }: Props) {
     <div className="modal-layer">
       <div className="modal-backdrop" onClick={onClose} />
       <form
+        ref={formRef}
+        tabIndex={-1}
         className="modal modal-narrow"
         role="dialog"
         aria-modal="true"
