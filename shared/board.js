@@ -347,6 +347,17 @@ export function asRecord(command) {
   return `${command}\n\n${RECORD_NOTE}`
 }
 
+// When the bot can't carry out a command it says why in a reply marked with the command's comment
+// id, so the board can tell which commands didn't go through (reactions can't: anyone can react).
+export function failedNote(commentId) {
+  return `<!-- job board: failed ${commentId} -->`
+}
+
+/** The comment ids a reply marks as not carried out. */
+export function failedIds(text) {
+  return [...String(text ?? '').matchAll(/<!--\s*job board: failed (\d+)\s*-->/gi)].map((m) => Number(m[1]))
+}
+
 export function isRecord(text) {
   return /<!--\s*job board: already applied\s*-->/i.test(String(text ?? ''))
 }

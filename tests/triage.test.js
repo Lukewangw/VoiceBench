@@ -1,7 +1,7 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import triage from '../.github/scripts/triage.js'
-import { asRecord, formatBody, parseBody } from '../shared/board.js'
+import { asRecord, failedIds, formatBody, parseBody } from '../shared/board.js'
 
 const ADMIN = 'lead'
 const MEMBER = 'sam'
@@ -291,8 +291,9 @@ test('people who were on a job cannot reopen it once an admin cancelled it', asy
 
 test('admins can assign others; members cannot', async () => {
   const gh = fakeGitHub(job())
-  await say(gh, MEMBER, '/assign @bob')
+  const asked = await say(gh, MEMBER, '/assign @bob')
   assert.deepEqual(gh.state.issue.assignees, [])
+  assert.deepEqual(failedIds(gh.state.replies.at(-1)), [asked.id], "the reply names the command it couldn't do")
   await say(gh, ADMIN, '/assign @bob')
   assert.deepEqual(gh.state.issue.assignees, [{ login: 'bob' }])
   await say(gh, ADMIN, '/assign @stranger')

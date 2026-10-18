@@ -227,6 +227,10 @@ async function main() {
         })
       if (path === `${pbase}/issues` && method === 'GET') {
         if (P.delay) await sleep(P.delay)
+        if (P.failOnce) {
+          P.failOnce = false
+          return respond(route, 502, { message: 'Server Error' })
+        }
         const state = url.searchParams.get('state') ?? 'open'
         return respond(
           route,
@@ -391,6 +395,7 @@ async function main() {
           S.comments.filter((c) => c.issue_number === i.number),
         )
       if (method === 'POST') {
+        if (S.commentDelay) await sleep(S.commentDelay)
         const c = addComment(i.number, fx.user(who), body.body)
         fireBot(i.number, (bot) => bot.runCommands(c))
         return respond(route, 201, c)
@@ -794,12 +799,13 @@ async function main() {
   assert.deepEqual(
     await nav.locator('.drawer .event.failed .event-text').allInnerTexts(),
     [
+      'dana approved this (didn’t go through)',
       'sam took @alice off this (didn’t go through)',
       'sam declined this: “Duplicate of https://github.com/octo/board/issues/1#issuecomment-1234567890123456789012345678901234567890” (didn’t go through)',
     ].map((t) => t.replace('’', "'")),
-    "only the bot's 😕 marks a command as not gone through",
+    'failed commands are the ones the bot says it could not do, whatever the reactions',
   )
-  step("a link to a missing job says so and Back still leaves it; only the bot's 😕 marks a failed command")
+  step("a link to a missing job says so and Back still leaves it; failed commands are the ones the bot couldn't do")
 
   // ---------------- Search, shortcuts, paging ----------------
   console.log('Search, shortcuts and long lists')
@@ -961,10 +967,28 @@ async function main() {
   await admin2.click('.drawer-foot button:has-text("Pick up")')
   await until(() => P.issues[0].assignees.some((a) => a.login === 'lead'), 'private pick up')
   await until(() => P.comments.some((c) => c.issue_number === 1 && isRecord(c.body)), 'private /take record')
+  // Another admin set P0 meanwhile; this page still shows P2 and sets P3.
+  P.issues[0].labels.push({ name: 'P0' })
+  await admin2.click('.prio-opt:has-text("P3")')
+  await until(() => P.issues[0].labels.some((l) => l.name === 'P3'), 'private priority')
+  await sleep(500)
+  assert.deepEqual(P.issues[0].labels.map((l) => l.name).sort(), ['P3', 'job'], 'only the priority just chosen is left')
   await admin2.keyboard.press('Escape')
   await admin2.waitForSelector(`.row:has-text("${PRIVATE_TITLE}") .lock`)
   await admin2.screenshot({ path: OUT + '/15-private-list.png' })
   step('admin added a private job: kept in the private repo, shown with a lock, picked up directly')
+
+  P.failOnce = true
+  await admin2.reload()
+  await admin2.goto(BASE + '#/jobs/p1')
+  await admin2.waitForSelector('header .sync-stale')
+  await sleep(500)
+  assert.match(admin2.url(), /#\/jobs\/p1$/, 'a link to a private job stays while private jobs could not be read')
+  assert.equal(await admin2.locator('.toast:has-text("Couldn\'t find that job")').count(), 0)
+  await admin2.click('header .sync')
+  await admin2.waitForSelector(`.drawer h2:has-text("${PRIVATE_TITLE}")`)
+  await admin2.keyboard.press('Escape')
+  step('a private list that fails once keeps the link, says so, and opens the job on retry')
 
   const member = await newPage()
   await member.goto(BASE + '#/jobs')
@@ -1068,10 +1092,32 @@ async function main() {
   await tabB.waitForSelector('.badge-admin')
   await tabA.keyboard.press('Escape')
   await tabA.waitForSelector('.drawer', { state: 'detached' })
+  await tabB.click('.page-head >> text=New job')
+  await tabB.fill('.modal input.input-lg', 'Secret plan')
+  await tabB.click('.vis-opt:has-text("Everyone")')
   await tabA.click('.me')
   await tabA.click('.menu-item:has-text("Sign out")')
   await tabB.waitForSelector('header button:has-text("Sign in")')
-  step('signing out in one tab signs out the other tabs too')
+  await tabB.waitForSelector('.modal', { state: 'detached' })
+  step('signing out in one tab signs out the other tabs too, and closes a half-written job there')
+
+  const slow = await newPage()
+  await slow.goto(BASE + '#/jobs')
+  await slow.click('header >> text=Sign in')
+  await slow.fill('.modal input[type=password]', 'member-token')
+  await slow.click('.modal button:has-text("Connect")')
+  await slow.waitForSelector('.toast:has-text("Signed in as @sam")')
+  await slow.goto(BASE + '#/jobs/5')
+  S.commentDelay = 2500 // posting the /take takes a while
+  await slow.click('.drawer-foot button:has-text("Pick up")')
+  await slow.keyboard.press('Escape')
+  await slow.click('.me')
+  await slow.click('.menu-item:has-text("Sign out")')
+  await sleep(9000) // the post lands, and a wait for the bot would have polled
+  S.commentDelay = 0
+  assert.equal(await slow.locator('.row-pending').count(), 0, 'nothing pending after signing out')
+  assert.equal(await slow.locator('.toast:has-text("You\'re on it")').count(), 0, 'no success message')
+  step('a pick-up still being posted when someone signs out leaves nothing behind')
 
   S.listsFail = true
   const lists = await newPage()

@@ -1,6 +1,7 @@
 import {
   JOB_LABEL,
   boardStatus,
+  failedIds,
   hasLabel,
   isCommandOnly,
   labelNames,
@@ -103,6 +104,15 @@ export function toJob(raw: RawIssue, source: Source): Job {
   }
 }
 
+/**
+ * Marks the commands that didn't go through: the bot names them in its reply (anyone can add a
+ * 👍 or 😕, so reaction counts alone can't tell).
+ */
+export function withFailures(notes: Note[]): Note[] {
+  const failed = new Set(notes.filter((n) => n.author.isBot).flatMap((n) => failedIds(n.body)))
+  return failed.size ? notes.map((n) => (failed.has(n.id) ? { ...n, failed: true } : n)) : notes
+}
+
 export function toNote(raw: RawComment): Note {
   const body = raw.body ?? ''
   return {
@@ -115,7 +125,7 @@ export function toNote(raw: RawComment): Note {
     url: raw.html_url,
     commands: parseCommands(body),
     commandOnly: isCommandOnly(body),
-    // The bot answers a command with 👍 or 😕; someone else's 😕 next to its 👍 isn't a failure.
+    // Settled by withFailures from the bot's replies; a 😕 with no 👍 is the fallback for old ones.
     failed: (raw.reactions?.confused ?? 0) > 0 && !((raw.reactions?.['+1'] ?? 0) > 0),
   }
 }

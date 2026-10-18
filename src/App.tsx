@@ -57,6 +57,14 @@ export function App() {
   const searchRef = useRef<HTMLInputElement>(null)
   const { viewer } = auth
 
+  // Signed out (here, in another tab, or because GitHub stopped taking the token) or signed in as
+  // someone else: a job being written or edited belongs to the old session (it may be private).
+  const formSession = useRef(auth.token)
+  useEffect(() => {
+    if (formSession.current && auth.token !== formSession.current) setForm(null)
+    formSession.current = auth.token
+  }, [auth.token])
+
   const lists = useMemo(() => {
     const shown = board.jobs.filter((j) => matchesQuery(j, query))
     return {

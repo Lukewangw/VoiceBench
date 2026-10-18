@@ -38,7 +38,8 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
 
   const submit = async () => {
     if (!valid || saving) return
-    if (!viewer) return openOnGitHub()
+    // Without a sign-in a new public job can be filed on GitHub instead; an edit or a private job can't.
+    if (!viewer) return editing || isPrivate ? setError('Sign in again to save this.') : openOnGitHub()
     setSaving(true)
     setError(null)
     try {

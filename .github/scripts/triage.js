@@ -14,6 +14,7 @@ import {
   PROPOSAL_LABEL,
   PRIORITIES,
   boardStatus,
+  failedNote,
   hasLabel,
   isPriorityLabel,
   isRecord,
@@ -319,7 +320,8 @@ export function createBot({ github, core, owner, repo, number }) {
     }
     await react(comment, problems.length ? 'confused' : '+1')
     if (problems.length) {
-      await github.rest.issues.createComment({ ...ref, body: `@${actor} I couldn't do that:\n${problems.join('\n')}` })
+      const body = `@${actor} I couldn't do that:\n${problems.join('\n')}\n\n${failedNote(comment.id)}`
+      await github.rest.issues.createComment({ ...ref, body })
     }
     core.info(
       `#${number}: @${actor}${admin ? ' (admin)' : ''} ran ${ran}` +

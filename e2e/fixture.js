@@ -163,7 +163,17 @@ const comment = (num, login, body, h, extra = {}) => ({
   ...extra,
 })
 
+// A member tried an admin-only command; the bot said no (😕 and a reply naming it), then a teammate 👍'd it.
+const approveAttempt = comment(1, 'dana', '/approve', 25.2, { reactions: { '+1': 1, confused: 1 } })
+
 export const comments = [
+  approveAttempt,
+  comment(
+    1,
+    'bot',
+    `@dana I couldn't do that:\n- \`/approve\`: only admins can approve proposals.\n\n<!-- job board: failed ${approveAttempt.id} -->`,
+    25.1,
+  ),
   comment(1, 'alice', '/take', 26, { reactions: { '+1': 1, confused: 1 } }), // someone's 😕 next to the bot's 👍
   comment(1, 'sam', '/drop @alice', 25, { reactions: { '+1': 0, confused: 1 } }),
   comment(

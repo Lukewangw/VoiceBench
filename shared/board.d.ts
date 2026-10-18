@@ -44,6 +44,8 @@ export function parseCommands(text: string | null | undefined): Command[]
 export const RECORD_NOTE: string
 export function asRecord(command: string): string
 export function isRecord(text: string | null | undefined): boolean
+export function failedNote(commentId: number): string
+export function failedIds(text: string | null | undefined): number[]
 export function stripCommands(text: string | null | undefined): string
 export function isCommandOnly(text: string | null | undefined): boolean
 export function mentionedUser(arg: string | null | undefined): string | null
