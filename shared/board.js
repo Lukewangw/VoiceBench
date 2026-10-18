@@ -108,7 +108,8 @@ function readDate(s, year) {
  */
 export function parseDue(text, today = new Date()) {
   if (text == null) return null
-  const s = String(text).trim().replace(/\s+/g, ' ')
+  // A date comes first, so a long answer is cut short before any work on it (issue text is untrusted).
+  const s = String(text).trim().slice(0, 200).replace(/\s+/g, ' ')
   if (!s || NO_ANSWER.test(s)) return null
   const year = today.getFullYear()
   const whole = readDate(s, year)

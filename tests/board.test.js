@@ -222,6 +222,7 @@ test('reading headings takes linear time, whatever the issue text', () => {
   const evil = '## a' + ' '.repeat(50_000) + 'b'
   const started = Date.now()
   parseBody(Array(20).fill(evil).join('\n'))
+  parseBody('### Due date\n\nOct 31' + ', x'.repeat(100_000))
   assert.ok(Date.now() - started < 1000, `took ${Date.now() - started} ms`)
 })
 
