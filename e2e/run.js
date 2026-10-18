@@ -458,7 +458,17 @@ async function main() {
   let p = await newPage()
   await p.goto(BASE + '#/jobs')
   await p.waitForSelector('.row-title')
-  assert.equal(await p.locator('.page-head .btn-primary').count(), 0, 'members get no New job button on Jobs')
+  assert.equal(
+    await p.locator('.page-head .btn-primary:has-text("Propose a job")').count(),
+    1,
+    'anyone can propose a job, starting from Jobs',
+  )
+  // Every row says what its date is, and who's on it.
+  assert.equal(await p.locator('.row:has-text("Fix WER computation") .due-label').innerText(), 'Overdue')
+  assert.equal(await p.locator('.row:has-text("Clean up old notebooks") .due-label').innerText(), 'Added')
+  assert.equal(await p.locator('.row:has-text("Set up the public leaderboard") .due-label').innerText(), 'Due')
+  assert.equal(await p.locator('.row:has-text("Fix WER computation") .row-meta').innerText(), 'Picked up by alice')
+  await p.screenshot({ path: OUT + '/01-visitor-jobs.png' })
   await p.click('header >> text=Sign in')
   await p.fill('.modal input[type=password]', 'member-token')
   await p.click('.modal button:has-text("Connect")')
@@ -682,7 +692,17 @@ async function main() {
   )
   await p.goto(BASE + '#/others')
   await p.waitForSelector('.tab:has-text("Others") .tab-count:text("1")')
-  step('declined a proposal with a reason')
+  // Declined proposals don't vanish: they're folded away under Others, and search finds them.
+  await p.click('.closed-section summary:has-text("Declined")')
+  assert.equal(
+    await p.locator('.closed-section .row:has-text("Add a Mandarin subset") .due-label').innerText(),
+    'Declined',
+  )
+  await p.fill('.search input', 'Mandarin')
+  await p.waitForSelector('.empty-text:has-text("1 declined below")')
+  assert.equal(await p.locator('.closed-section[open] .row').count(), 1)
+  await p.fill('.search input', '')
+  step('declined a proposal with a reason; it stays findable under Others')
   await p.screenshot({ path: OUT + '/12-admin-others.png' })
 
   await p.goto(BASE + '#/jobs/4')
@@ -848,7 +868,7 @@ async function main() {
 
   await s1.goto(BASE + '#/done')
   await s1.waitForSelector('.row-title')
-  assert.equal(await s1.locator('.row').count(), 50)
+  assert.equal(await s1.locator('main > .card .row').count(), 50)
   await s1.click('.more-row')
   await s1.waitForFunction(() => document.querySelectorAll('.row').length > 50)
   assert.equal(await s1.locator('.more-row').count(), 0)

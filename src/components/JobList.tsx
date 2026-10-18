@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { shortDate, timeAgo } from '../lib/format'
 import { isOn, type Job } from '../lib/model'
 import type { Viewer } from '../state'
-import { AvatarStack, DueDate, Icon, PriorityPill, Spinner } from './ui'
+import { AvatarStack, DateCell, DueDate, Icon, PriorityPill, Spinner } from './ui'
 
 export type Tab = 'jobs' | 'others' | 'done'
 export const TABS: { key: Tab; label: string }[] = [
@@ -51,6 +51,10 @@ function applyFilter(jobs: Job[], filter: Filter, login: string | undefined) {
 interface ListProps {
   tab: Tab
   jobs: Job[]
+  /** Declined proposals (Others) or cancelled jobs (Done), shown folded away under the list. */
+  closed: Job[]
+  /** How many jobs each tab has for the current search. */
+  counts: Record<Tab, number>
   othersCount: number
   query: string
   onClearQuery(): void
@@ -64,6 +68,8 @@ interface ListProps {
 export function JobList({
   tab,
   jobs,
+  closed,
+  counts,
   othersCount,
   query,
   onClearQuery,
@@ -128,7 +134,25 @@ export function JobList({
             </span>
             <div className="empty-title">Nothing here matches “{query}”</div>
             <div className="empty-text">
-              Try another word, a name, or a number like #12. Other tabs may have matches.
+              {(() => {
+                const elsewhere = TABS.filter((t) => t.key !== tab && counts[t.key] > 0)
+                if (closed.length) return `${closed.length} ${tab === 'others' ? 'declined' : 'cancelled'} below.`
+                if (!elsewhere.length) return 'Try another word, a name, or a number like #12.'
+                return (
+                  <>
+                    Found in{' '}
+                    {elsewhere.map((t, i) => (
+                      <span key={t.key}>
+                        {i > 0 && ' and '}
+                        <a href={`#/${t.key}`}>
+                          {t.label} ({counts[t.key]})
+                        </a>
+                      </span>
+                    ))}
+                    .
+                  </>
+                )
+              })()}
             </div>
             <button className="btn btn-outline" onClick={onClearQuery}>
               <Icon name="x" size={15} /> Clear search
@@ -170,6 +194,27 @@ export function JobList({
           </a>
         )}
       </div>
+      {closed.length > 0 && (
+        <details className="closed-section" open={!!query}>
+          <summary>
+            {tab === 'others' ? 'Declined' : 'Cancelled'} <span className="tab-count">{closed.length}</span>
+          </summary>
+          <div className="card">
+            <ul className="list">
+              {closed.map((job) => (
+                <Row
+                  key={job.key}
+                  tab={tab}
+                  job={job}
+                  viewer={viewer}
+                  pending={pending[job.key]}
+                  onApprove={onApprove}
+                />
+              ))}
+            </ul>
+          </div>
+        </details>
+      )}
     </>
   )
 }
@@ -190,14 +235,19 @@ function Row({
   const [busy, setBusy] = useState(false)
   const done = tab === 'done'
   const mine = tab === 'jobs' && isOn(job, viewer?.login)
+  const names = job.assignees.map((a) => a.login).join(', ')
+  const closed = job.status === 'closed'
   const meta =
     tab === 'others'
       ? `Proposed by ${job.author.login} · ${timeAgo(job.createdAt)}`
-      : done
-        ? job.assignees.length
-          ? `Done by ${job.assignees.map((a) => a.login).join(', ')}`
-          : 'Done'
-        : null
+      : closed
+        ? names && `Was with ${names}`
+        : done
+          ? names
+            ? `Done by ${names}`
+            : 'Done'
+          : names && `Picked up by ${names}`
+  const closedAt = job.closedAt ? shortDate(new Date(job.closedAt)) : ''
 
   return (
     <li className={`row row-${job.status}${mine ? ' row-mine' : ''}`}>
@@ -224,7 +274,8 @@ function Row({
           <Spinner size={12} /> <span className="row-pending-text">{pending}</span>
         </span>
       ) : (
-        tab === 'others' &&
+        // Quick approval is for open proposals; a declined one is approved (after all) from its page.
+        job.status === 'proposal' &&
         viewer?.isAdmin && (
           <button
             className="btn btn-sm btn-approve row-action"
@@ -244,10 +295,12 @@ function Row({
         )
       )}
       <AvatarStack people={tab === 'others' ? [job.author] : job.assignees} me={viewer?.login} />
-      {done ? (
-        <span className="due due-later">{job.closedAt ? shortDate(new Date(job.closedAt)) : ''}</span>
+      {closed ? (
+        <DateCell label={job.isJob ? 'Cancelled' : 'Declined'} date={closedAt} tone="none" />
+      ) : done ? (
+        <DateCell label="Done" date={closedAt} />
       ) : (
-        <DueDate due={job.due} />
+        <DueDate due={job.due} createdAt={job.createdAt} />
       )}
     </li>
   )

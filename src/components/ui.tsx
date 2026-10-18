@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { priorityName, type PriorityKey } from '../../shared/board.js'
-import { dueRelative, dueShort, dueTone } from '../lib/format'
+import { daysUntil, dueRelative, dueShort, dueTone, shortDate } from '../lib/format'
 import type { Person } from '../lib/model'
 
 // Stroke icons drawn on a 24px grid (shapes after Lucide, ISC license).
@@ -172,13 +172,36 @@ export function PriorityPill({ priority, long = false }: { priority: PriorityKey
   )
 }
 
-export function DueDate({ due, muted = false }: { due: string | null; muted?: boolean }) {
-  if (!due) return <span className="due due-none">No date</span>
-  const tone = muted ? 'later' : dueTone(due)
+/** A list's date cell, which says what the date is: "Due Oct 28", "Overdue Oct 17", "Done Oct 16". */
+export function DateCell({
+  label,
+  date,
+  tone = 'later',
+  title,
+}: {
+  label: string
+  date: string
+  tone?: 'overdue' | 'soon' | 'later' | 'none'
+  title?: string
+}) {
   return (
-    <span className={`due due-${tone}`} title={dueRelative(due)}>
-      {dueShort(due)}
+    <span className={`due due-${tone}`} title={title}>
+      <span className="due-label">{label}</span> {date}
     </span>
+  )
+}
+
+/** When a job is due, or (every job has a date) when it was added if it has no due date. */
+export function DueDate({ due, createdAt }: { due: string | null; createdAt: string }) {
+  if (!due) return <DateCell label="Added" date={shortDate(new Date(createdAt))} tone="none" />
+  const n = daysUntil(due)
+  return (
+    <DateCell
+      label={n < 0 ? 'Overdue' : 'Due'}
+      date={n === 0 ? 'today' : n === 1 ? 'tomorrow' : dueShort(due)}
+      tone={dueTone(due)}
+      title={dueRelative(due)}
+    />
   )
 }
 

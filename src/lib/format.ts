@@ -28,7 +28,7 @@ export function dueRelative(ymd: string): string {
   const n = daysUntil(ymd)
   if (n === 0) return 'today'
   if (n === 1) return 'tomorrow'
-  if (n === -1) return 'yesterday'
+  if (n === -1) return '1 day overdue'
   return n > 0 ? `in ${n} days` : `${-n} days overdue`
 }
 

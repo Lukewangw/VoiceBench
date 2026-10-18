@@ -841,7 +841,32 @@ button {
 .due-none {
   color: var(--text-3);
   font-weight: 450;
-  font-size: 12.5px;
+}
+.due-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-3);
+}
+.due-overdue .due-label {
+  color: inherit;
+}
+
+.closed-section {
+  margin-top: 14px;
+}
+.closed-section > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 4px;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  cursor: pointer;
+  list-style: revert;
+}
+.closed-section > .card {
+  margin-top: 8px;
 }
 
 .avatar {
@@ -1935,6 +1960,12 @@ body:has(.modal-layer) .toasts {
     grid-template-columns: auto minmax(0, 1fr) auto auto auto;
     gap: 10px;
     padding: 12px 14px;
+  }
+  /* "Due" above "Oct 28" keeps the date column narrow. */
+  .row .due-label {
+    display: block;
+    font-size: 11px;
+    line-height: 1.2;
   }
   /* Titles are the overview: on a phone they get two lines instead of a few words. */
   .row-title {

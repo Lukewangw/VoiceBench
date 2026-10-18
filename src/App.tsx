@@ -73,6 +73,9 @@ export function App() {
       jobs: shown.filter((j) => j.status === 'open' || j.status === 'active').sort(byPriority),
       others: shown.filter((j) => j.status === 'proposal').sort(byPriority),
       done: shown.filter((j) => j.status === 'done').sort(byRecentlyClosed),
+      // Declined proposals and cancelled jobs, folded away under Others and Done.
+      declined: shown.filter((j) => j.status === 'closed' && !j.isJob).sort(byRecentlyClosed),
+      cancelled: shown.filter((j) => j.status === 'closed' && j.isJob).sort(byRecentlyClosed),
     }
   }, [board.jobs, query])
   const counts = { jobs: lists.jobs.length, others: lists.others.length, done: lists.done.length }
@@ -124,7 +127,8 @@ export function App() {
     setRefreshing(false)
   }
 
-  const showNew = route.tab !== 'done' && (viewer?.isAdmin || route.tab === 'others')
+  // Everyone can add something from Jobs and Others: admins a job, everyone else a proposal.
+  const showNew = route.tab !== 'done'
   const openNew = useCallback(() => {
     // Members add jobs as proposals, which live under Others.
     if (!viewer?.isAdmin && route.tab !== 'others') go('others')
@@ -200,7 +204,7 @@ export function App() {
                   {!query && <kbd className="search-key">/</kbd>}
                 </label>
                 {showNew && (
-                  <button className="btn btn-primary" onClick={() => setForm({})} title="Keyboard: n">
+                  <button className="btn btn-primary" onClick={openNew} title="Keyboard: n">
                     <Icon name="plus" /> {viewer?.isAdmin ? 'New job' : 'Propose a job'}
                   </button>
                 )}
@@ -211,6 +215,8 @@ export function App() {
                 <JobList
                   tab={route.tab}
                   jobs={lists[route.tab]}
+                  closed={route.tab === 'others' ? lists.declined : route.tab === 'done' ? lists.cancelled : []}
+                  counts={counts}
                   othersCount={waitingProposals}
                   query={query}
                   onClearQuery={() => setQuery('')}
