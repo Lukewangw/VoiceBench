@@ -93,7 +93,9 @@ function UserMenu({ viewer, onSignOut }: { viewer: Viewer; onSignOut(): void }) 
                   ? 'You can see private jobs.'
                   : viewer.privateAccess === 'needs-scope'
                     ? 'Private jobs are hidden: sign in again with a token that has the repo scope.'
-                    : `Private jobs are off: ${PRIVATE_REPO} doesn't exist yet or isn't shared with you.`}
+                    : viewer.privateAccess === 'not-private'
+                      ? `Private jobs are off: ${PRIVATE_REPO} is public. Make it private on GitHub first.`
+                      : `Private jobs are off: ${PRIVATE_REPO} doesn't exist yet or isn't shared with you.`}
               </span>
             </div>
           )}

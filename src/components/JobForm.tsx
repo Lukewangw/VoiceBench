@@ -192,6 +192,14 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
                       Sign in again with the repo scope
                     </button>
                   </>
+                ) : viewer?.privateAccess === 'not-private' ? (
+                  <>
+                    Private jobs are kept in {PRIVATE_REPO}, which is public right now.{' '}
+                    <a href={`${PRIVATE_REPO_URL}/settings`} target="_blank" rel="noreferrer">
+                      Make it private
+                    </a>{' '}
+                    (Settings → Danger Zone), then reload.
+                  </>
                 ) : (
                   <>
                     Private jobs are kept in{' '}

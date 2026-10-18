@@ -29,10 +29,11 @@ export const errorText = (e: unknown) => (e instanceof Error ? e.message : 'Some
 // Signing in: a GitHub token, kept in this browser only.
 
 /**
- * Whether an admin can see private jobs: "yes"; "needs-scope" when the token can't read private
- * repositories at all; "no-access" when the private repository is missing or not shared with them.
+ * Whether an admin can use private jobs: "yes"; "needs-scope" when the token can't read private
+ * repositories at all; "no-access" when the private repository is missing or not shared with them;
+ * "not-private" when that repository exists but is public, so nothing in it would be private.
  */
-export type PrivateAccess = 'yes' | 'needs-scope' | 'no-access'
+export type PrivateAccess = 'yes' | 'needs-scope' | 'no-access' | 'not-private'
 
 export interface Viewer extends Person {
   isAdmin: boolean
@@ -58,8 +59,8 @@ async function whoIs(token: string): Promise<Viewer> {
   const viewer: Viewer = { ...toPerson(user), isAdmin: Boolean(can.admin || can.maintain || can.push) }
   if (viewer.isAdmin && PRIVATE_REPO) {
     try {
-      await api.get(`/repos/${PRIVATE_REPO}`)
-      viewer.privateAccess = 'yes'
+      const companion = await api.get<{ private?: boolean }>(`/repos/${PRIVATE_REPO}`)
+      viewer.privateAccess = companion.private === true ? 'yes' : 'not-private'
     } catch {
       const canReadPrivate = scopes === null || /(^|[\s,])repo(?=[\s,]|$)/.test(scopes)
       viewer.privateAccess = canReadPrivate ? 'no-access' : 'needs-scope'
