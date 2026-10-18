@@ -155,6 +155,16 @@ button {
   color: var(--text-3);
 }
 
+/* Links inside running text are underlined, so they don't rely on color alone. */
+.markdown a,
+.privacy a,
+.vis-hint a,
+.step-text a,
+.empty-text a {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
 .icon {
   flex: none;
   display: block;
@@ -405,7 +415,7 @@ button {
   border-radius: 999px;
   font-size: 12px;
   font-weight: 650;
-  color: var(--text-3);
+  color: var(--text-2);
   background: color-mix(in srgb, var(--text-3) 14%, transparent);
   font-variant-numeric: tabular-nums;
 }
@@ -906,6 +916,7 @@ button {
   color: var(--red);
 }
 .empty-title {
+  margin: 0;
   font-weight: 650;
   font-size: 16px;
 }
@@ -1693,6 +1704,27 @@ textarea.input {
   padding: 1px 5px;
   border-radius: 5px;
   background: var(--gray-soft);
+}
+.remember {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  margin: 0 0 14px;
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+.remember input {
+  margin-top: 3px;
+  accent-color: var(--accent);
+}
+.remember span {
+  display: flex;
+  flex-direction: column;
+}
+.remember small {
+  font-size: 12.5px;
+  color: var(--text-3);
 }
 .privacy {
   display: flex;

@@ -2,7 +2,8 @@
 // run the real board bot (.github/scripts/triage.js), so members' and admins' flows go through the
 // same code as production. Run with `npm run e2e`; screenshots land in e2e/.output/.
 import assert from 'node:assert/strict'
-import { mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { createRequire } from 'node:module'
 import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
@@ -21,6 +22,7 @@ const TOKENS = { 'admin-token': 'lead', 'member-token': 'sam', 'admin-repo-token
 const SCOPES = { 'admin-token': 'public_repo', 'member-token': 'public_repo', 'admin-repo-token': 'repo' }
 const ADMINS = new Set(['lead'])
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const AXE = readFileSync(createRequire(import.meta.url).resolve('axe-core/axe.min.js'), 'utf8')
 const TYPES = {
   '.html': 'text/html',
   '.js': 'text/javascript',
@@ -363,12 +365,12 @@ async function main() {
 
   const browser = await chromium.launch()
   const problems = []
-  async function newPage() {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1 })
+  async function newPage({ colorScheme = 'light', snapshot = data } = {}) {
+    const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1, colorScheme })
     // The site itself, straight from the build (plus the sample data.json).
     await ctx.route(BASE + '**', (route) => {
       const path = new URL(route.request().url()).pathname
-      if (path === '/data.json') return route.fulfill({ status: 200, contentType: 'application/json', body: data })
+      if (path === '/data.json') return route.fulfill({ status: 200, contentType: 'application/json', body: snapshot })
       try {
         const file = join(SITE, path === '/' ? 'index.html' : path)
         return route.fulfill({
@@ -394,7 +396,11 @@ async function main() {
     }
     throw new Error('timed out waiting for: ' + what)
   }
-  const step = (s) => console.log('  ✓', s)
+  const passed = []
+  const step = (s) => {
+    passed.push(s)
+    console.log('  ✓', s)
+  }
 
   // ---------------- Member ----------------
   console.log('Member flow (@sam, no write access)')
@@ -648,6 +654,57 @@ async function main() {
   assert.equal(await s1.locator('.more-row').count(), 0)
   step('long lists show 50 rows at a time with "Show more"')
 
+  // ---------------- Accessibility audit ----------------
+  console.log('Accessibility audit (axe, WCAG 2.1 A/AA)')
+  for (const colorScheme of ['light', 'dark']) {
+    const ax = await newPage({ colorScheme })
+    const audit = async (screen) => {
+      await ax.waitForTimeout(400) // let open/close animations settle
+      await ax.evaluate(AXE)
+      const { violations } = await ax.evaluate(() =>
+        window.axe.run(document, { runOnly: ['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'best-practice'] }),
+      )
+      const found = violations.map((v) => `${v.id} (${v.impact}): ${v.nodes.map((n) => n.target.join(' ')).join(', ')}`)
+      assert.deepEqual(found, [], `${colorScheme} ${screen}:\n  ${found.join('\n  ')}`)
+    }
+    await ax.goto(BASE + '#/jobs')
+    await ax.waitForSelector('.row-title')
+    await audit('list')
+    await ax.goto(BASE + '#/jobs/1')
+    await ax.waitForSelector('.drawer .markdown')
+    await audit('job')
+    await ax.goto(BASE + '#/others')
+    await ax.click('.page-head >> text=Propose a job')
+    await audit('form')
+    await ax.keyboard.press('Escape')
+    await ax.click('header >> text=Sign in')
+    await audit('sign-in')
+  }
+  step('no axe violations on the list, a job, the form or sign-in, in light and dark mode')
+
+  // ---------------- Resilience ----------------
+  console.log('Resilience')
+  const broken = await newPage({ snapshot: JSON.stringify({ version: 1, issues: [null], comments: [] }) })
+  await broken.goto(BASE + '#/jobs')
+  await broken.waitForSelector('.row-title')
+  step('a damaged data.json falls back to reading GitHub instead of hanging')
+
+  const shared = await newPage()
+  await shared.goto(BASE + '#/jobs')
+  await shared.click('header >> text=Sign in')
+  await shared.fill('.modal input[type=password]', 'member-token')
+  await shared.uncheck('.remember input')
+  await shared.click('.modal button:has-text("Connect")')
+  await shared.waitForSelector('.toast:has-text("Signed in as @sam")')
+  const stored = await shared.evaluate(() => [Object.keys(localStorage).length, Object.keys(sessionStorage).length])
+  assert.deepEqual(stored, [0, 2], 'token and profile only in sessionStorage')
+  await shared.reload()
+  await shared.waitForSelector('header .me')
+  const otherTab = await shared.context().newPage()
+  await otherTab.goto(BASE + '#/jobs')
+  await otherTab.waitForSelector('header >> text=Sign in')
+  step('"stay signed in" off: survives a reload, not a new tab, nothing in localStorage')
+
   // ---------------- Private jobs ----------------
   console.log('Private jobs (admin only)')
   const PRIVATE_TITLE = 'Negotiate the dataset license fee'
@@ -743,6 +800,10 @@ async function main() {
   const unexpected = problems.filter((x) => !/Failed to load resource/.test(x) && !x.includes('evil.example'))
   assert.deepEqual(unexpected, [], 'no errors in the page')
   console.log(`No page errors. The bot ran ${S.botRuns.length} times. ALL FLOWS PASSED`)
+  if (process.env.GITHUB_STEP_SUMMARY) {
+    const lines = passed.map((p) => `- ✅ ${p}`).join('\n')
+    appendFileSync(process.env.GITHUB_STEP_SUMMARY, `### End-to-end: ${passed.length} checks passed\n\n${lines}\n`)
+  }
 }
 
 main().catch((e) => {

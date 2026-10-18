@@ -15,7 +15,11 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
     node.setAttribute('target', '_blank')
     node.setAttribute('rel', 'noopener noreferrer')
   }
-  if (node.tagName === 'INPUT') node.setAttribute('disabled', '')
+  if (node.tagName === 'INPUT') {
+    node.setAttribute('disabled', '')
+    const item = node.parentElement?.textContent?.trim()
+    node.setAttribute('aria-label', `${node.hasAttribute('checked') ? 'Done' : 'To do'}${item ? `: ${item}` : ''}`)
+  }
 })
 
 const OPTIONS = {

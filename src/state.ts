@@ -25,7 +25,7 @@ import {
   type Person,
   type Source,
 } from './lib/model'
-import { storage } from './lib/storage'
+import { sessionStore, storage } from './lib/storage'
 import { toast } from './toast'
 
 const TOKEN_KEY = `job-board:${REPO}:token`
@@ -54,7 +54,8 @@ export interface Viewer extends Person {
 export interface Auth {
   token: string | null
   viewer: Viewer | null
-  signIn(token: string): Promise<Viewer>
+  /** `remember: false` keeps the token only until the tab closes. */
+  signIn(token: string, remember?: boolean): Promise<Viewer>
   signOut(): void
 }
 
@@ -82,23 +83,30 @@ async function whoIs(token: string): Promise<Viewer> {
   return viewer
 }
 
+// The token is kept in localStorage when someone chose to stay signed in, otherwise in
+// sessionStorage, which the browser drops when the tab closes.
+const tokenStore = () => (storage.get(TOKEN_KEY) ? storage : sessionStore.get(TOKEN_KEY) ? sessionStore : null)
+
 function savedViewer(): Viewer | null {
-  if (!storage.get(TOKEN_KEY)) return null
+  const store = tokenStore()
+  if (!store) return null
   try {
-    return JSON.parse(storage.get(VIEWER_KEY) ?? 'null') as Viewer | null
+    return JSON.parse(store.get(VIEWER_KEY) ?? 'null') as Viewer | null
   } catch {
     return null
   }
 }
 
 export function useAuth(): Auth {
-  const [token, setToken] = useState(() => storage.get(TOKEN_KEY))
+  const [token, setToken] = useState(() => tokenStore()?.get(TOKEN_KEY) ?? null)
   const [viewer, setViewer] = useState<Viewer | null>(savedViewer)
   const checked = useRef<string | null>(null)
 
   const signOut = useCallback(() => {
-    storage.remove(TOKEN_KEY)
-    storage.remove(VIEWER_KEY)
+    for (const store of [storage, sessionStore]) {
+      store.remove(TOKEN_KEY)
+      store.remove(VIEWER_KEY)
+    }
     setToken(null)
     setViewer(null)
   }, [])
@@ -110,7 +118,7 @@ export function useAuth(): Auth {
     whoIs(token)
       .then((v) => {
         setViewer(v)
-        storage.set(VIEWER_KEY, JSON.stringify(v))
+        tokenStore()?.set(VIEWER_KEY, JSON.stringify(v))
       })
       .catch((e) => {
         if (e instanceof GitHubError && e.status === 401) {
@@ -120,12 +128,17 @@ export function useAuth(): Auth {
       })
   }, [token, signOut])
 
-  const signIn = useCallback(async (raw: string) => {
+  const signIn = useCallback(async (raw: string, remember = true) => {
     const t = raw.trim()
     const v = await whoIs(t)
     checked.current = t
-    storage.set(TOKEN_KEY, t)
-    storage.set(VIEWER_KEY, JSON.stringify(v))
+    for (const store of [storage, sessionStore]) {
+      store.remove(TOKEN_KEY)
+      store.remove(VIEWER_KEY)
+    }
+    const store = remember ? storage : sessionStore
+    store.set(TOKEN_KEY, t)
+    store.set(VIEWER_KEY, JSON.stringify(v))
     setToken(t)
     setViewer(v)
     return v
@@ -237,10 +250,16 @@ export function useBoard(auth: Auth): Board {
   const loadSnapshot = useCallback(async () => {
     const snap = await fetchSnapshot()
     if (!snap) return false
-    // Keep private jobs an admin already loaded; the snapshot only ever has public ones.
-    setJobMap((m) => settle({ ...byKey(issuesOf(snap.issues, PUBLIC).map(withOverlay)), ...privateOnly(m) }))
+    let jobs: Record<string, Job>
     const grouped: Record<string, Note[]> = {}
-    for (const c of snap.comments) (grouped[jobKey(c.issue_number ?? 0)] ??= []).push(toNote(c))
+    try {
+      jobs = byKey(issuesOf(snap.issues, PUBLIC).map(withOverlay))
+      for (const c of snap.comments ?? []) (grouped[jobKey(c.issue_number ?? 0)] ??= []).push(toNote(c))
+    } catch {
+      return false // a damaged snapshot: read GitHub directly instead
+    }
+    // Keep private jobs an admin already loaded; the snapshot only ever has public ones.
+    setJobMap((m) => settle({ ...jobs, ...privateOnly(m) }))
     setNotes((m) => ({ ...grouped, ...privateOnly(m) }))
     setSource('snapshot')
     setSyncedAt(snap.generatedAt)

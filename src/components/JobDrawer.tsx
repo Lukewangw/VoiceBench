@@ -27,6 +27,8 @@ interface Props {
   onClose(): void
   onEdit(job: Job): void
   onSignIn(): void
+  /** True while a dialog is open on top of the drawer. */
+  inert?: boolean
 }
 
 const STATUS: Record<Job['status'], { label: string; tone: string; icon: IconName }> = {
@@ -37,10 +39,22 @@ const STATUS: Record<Job['status'], { label: string; tone: string; icon: IconNam
   closed: { label: 'Declined', tone: 'gray', icon: 'ban' },
 }
 
-export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes, onClose, onEdit, onSignIn }: Props) {
+export function JobDrawer({
+  job,
+  tab,
+  notes,
+  viewer,
+  pending,
+  actions,
+  loadNotes,
+  onClose,
+  onEdit,
+  onSignIn,
+  inert = false,
+}: Props) {
   const [busy, setBusy] = useState<string | null>(null)
   const [declining, setDeclining] = useState(false)
-  const panelRef = useRef<HTMLElement>(null)
+  const panelRef = useRef<HTMLDivElement>(null)
   useDialog(panelRef, onClose)
 
   useEffect(() => {
@@ -111,9 +125,9 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   }
 
   return (
-    <div className="drawer-layer">
+    <div className="drawer-layer" inert={inert}>
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside
+      <div
         className="drawer"
         role="dialog"
         aria-modal="true"
@@ -275,7 +289,7 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
         </div>
 
         {primary && <div className="drawer-foot">{primary}</div>}
-      </aside>
+      </div>
     </div>
   )
 }

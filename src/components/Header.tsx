@@ -26,7 +26,7 @@ export function Header({ viewer, syncedAt, live, refreshing, onRefresh, onSignIn
   return (
     <header className="topbar">
       <div className="topbar-inner">
-        <a className="brand" href="#/jobs" aria-label={`${TITLE} job board`}>
+        <a className="brand" href="#/jobs">
           <Logo />
           <span className="brand-text">
             <span className="brand-title">{TITLE}</span>

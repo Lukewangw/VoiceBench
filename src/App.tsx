@@ -141,75 +141,78 @@ export function App() {
 
   return (
     <>
-      <Header
-        viewer={viewer}
-        syncedAt={board.syncedAt}
-        live={board.live}
-        refreshing={refreshing}
-        onRefresh={refresh}
-        onSignIn={openSignIn}
-        onSignOut={() => {
-          auth.signOut()
-          toast('Signed out', 'info')
-        }}
-      />
+      <div className="shell" inert={!!selected || !!form || signingIn}>
+        <Header
+          viewer={viewer}
+          syncedAt={board.syncedAt}
+          live={board.live}
+          refreshing={refreshing}
+          onRefresh={refresh}
+          onSignIn={openSignIn}
+          onSignOut={() => {
+            auth.signOut()
+            toast('Signed out', 'info')
+          }}
+        />
 
-      <main className="page">
-        {!REPO ? (
-          <Problem title="This board doesn't know its repository" text="Build it with VITE_REPO=owner/name set." />
-        ) : (
-          <>
-            <div className="page-head">
-              <Tabs tab={route.tab} counts={counts} />
-              <label className="search">
-                <Icon name="search" />
-                <input
-                  ref={searchRef}
-                  type="search"
-                  value={query}
-                  placeholder="Search"
-                  aria-label="Search jobs by title, person or #number"
-                  onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Escape') {
-                      setQuery('')
-                      e.currentTarget.blur()
-                    }
-                  }}
+        <main className="page">
+          <h1 className="sr-only">{TITLE} job board</h1>
+          {!REPO ? (
+            <Problem title="This board doesn't know its repository" text="Build it with VITE_REPO=owner/name set." />
+          ) : (
+            <>
+              <div className="page-head">
+                <Tabs tab={route.tab} counts={counts} />
+                <label className="search">
+                  <Icon name="search" />
+                  <input
+                    ref={searchRef}
+                    type="search"
+                    value={query}
+                    placeholder="Search"
+                    aria-label="Search jobs by title, person or #number"
+                    onChange={(e) => setQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Escape') {
+                        setQuery('')
+                        e.currentTarget.blur()
+                      }
+                    }}
+                  />
+                  {!query && <kbd className="search-key">/</kbd>}
+                </label>
+                {showNew && (
+                  <button className="btn btn-primary" onClick={() => setForm({})} title="Keyboard: n">
+                    <Icon name="plus" /> {viewer?.isAdmin ? 'New job' : 'Propose a job'}
+                  </button>
+                )}
+              </div>
+              {board.error && !board.jobs.length && !board.loading ? (
+                <Problem title="Couldn't load the board" text={board.error} onRetry={refresh} />
+              ) : (
+                <JobList
+                  tab={route.tab}
+                  jobs={lists[route.tab]}
+                  othersCount={waitingProposals}
+                  query={query}
+                  onClearQuery={() => setQuery('')}
+                  loading={board.loading}
+                  viewer={viewer}
+                  pending={board.pending}
+                  onNew={openNew}
+                  onApprove={approve}
                 />
-                {!query && <kbd className="search-key">/</kbd>}
-              </label>
-              {showNew && (
-                <button className="btn btn-primary" onClick={() => setForm({})} title="Keyboard: n">
-                  <Icon name="plus" /> {viewer?.isAdmin ? 'New job' : 'Propose a job'}
-                </button>
               )}
-            </div>
-            {board.error && !board.jobs.length && !board.loading ? (
-              <Problem title="Couldn't load the board" text={board.error} onRetry={refresh} />
-            ) : (
-              <JobList
-                tab={route.tab}
-                jobs={lists[route.tab]}
-                othersCount={waitingProposals}
-                query={query}
-                onClearQuery={() => setQuery('')}
-                loading={board.loading}
-                viewer={viewer}
-                pending={board.pending}
-                onNew={openNew}
-                onApprove={approve}
-              />
-            )}
-          </>
-        )}
-        <footer className="foot">
-          Runs on GitHub Issues ·{' '}
-          <a href={`${REPO_URL}/issues`} target="_blank" rel="noreferrer">
-            {REPO}
-          </a>
-        </footer>
-      </main>
+            </>
+          )}
+          <footer className="foot">
+            Runs on GitHub Issues ·{' '}
+            <a href={`${REPO_URL}/issues`} target="_blank" rel="noreferrer">
+              {REPO}
+            </a>
+          </footer>
+        </main>
+      </div>
 
       {selected && (
         <JobDrawer
@@ -224,6 +227,7 @@ export function App() {
           onClose={closeDrawer}
           onEdit={(job) => setForm({ job })}
           onSignIn={openSignIn}
+          inert={!!form || signingIn}
         />
       )}
       {form && (
@@ -238,8 +242,8 @@ export function App() {
       )}
       {signingIn && (
         <SignIn
-          onSignIn={async (token) => {
-            const v = await auth.signIn(token)
+          onSignIn={async (token, remember) => {
+            const v = await auth.signIn(token, remember)
             toast(`Signed in as @${v.login}${v.isAdmin ? ' · admin' : ''}`)
             return v
           }}
