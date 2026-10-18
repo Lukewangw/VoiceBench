@@ -424,6 +424,51 @@ button {
   background: var(--amber-soft);
 }
 
+/* ---------- Quick filters ---------- */
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: -4px 0 12px;
+}
+.filter {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
+}
+.filter:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+.filter[aria-pressed='true'] {
+  background: var(--accent-soft);
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+  color: var(--accent-text);
+}
+.filter-count {
+  font-size: 12px;
+  color: var(--text-3);
+  font-variant-numeric: tabular-nums;
+}
+.filter[aria-pressed='true'] .filter-count {
+  color: inherit;
+}
+
 /* ---------- Search ---------- */
 
 .search {
@@ -1867,6 +1912,18 @@ textarea.input {
     grid-template-columns: auto minmax(0, 1fr) auto auto;
     gap: 10px;
     padding: 12px 14px;
+  }
+  /* Titles are the overview: on a phone they get two lines instead of a few words. */
+  .row-title {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .others-row-text {
+    white-space: normal;
   }
   .row .avatar-empty {
     display: none;

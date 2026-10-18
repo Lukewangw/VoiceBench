@@ -13,6 +13,8 @@ things up themselves.
 - **Done** keeps what's been finished.
 - **Pick up** a job to put yourself on it; several people can work on one job. **Mark done** when it's finished,
   or **Drop** it if you can't get to it. Jobs you're on are marked with a green bar.
+- **Up for grabs** and **Mine**, above the list, narrow Jobs to what nobody has picked up yet and to what you're
+  on. Search (press `/`) matches titles, people (`@name`) and numbers (`#12`); `n` adds a job.
 
 Admins' changes apply right away. Everyone else's go through the board bot and land within a minute; the page
 shows "Picking up…" and similar until they do.
@@ -108,7 +110,8 @@ npm run build
 ```
 
 `npm run e2e` needs a Playwright Chromium (`npx playwright install chromium`). It covers members' and admins'
-flows, private jobs, search and keyboard use, and hostile comment HTML.
+flows, private jobs, search, filters and keyboard use, hostile comment HTML, phone-sized screens and an axe
+accessibility audit in light and dark mode.
 
 Every push and pull request runs formatting, type, unit and end-to-end checks; the site is only published when they
 pass. Dependabot opens one grouped update a month per ecosystem, checked the same way.

@@ -34,6 +34,20 @@ export function Tabs({ tab, counts }: { tab: Tab; counts: Record<Tab, number> })
 /** Long lists (Done, mostly) show this many rows at a time. */
 const PAGE = 50
 
+// Quick filters on Jobs: what nobody has picked up yet, and what you're on.
+const FILTERS = [
+  { key: 'all', label: 'All' },
+  { key: 'free', label: 'Up for grabs' },
+  { key: 'mine', label: 'Mine' },
+] as const
+type Filter = (typeof FILTERS)[number]['key']
+
+function applyFilter(jobs: Job[], filter: Filter, login: string | undefined) {
+  if (filter === 'free') return jobs.filter((j) => j.status === 'open')
+  if (filter === 'mine') return jobs.filter((j) => isOn(j, login))
+  return jobs
+}
+
 interface ListProps {
   tab: Tab
   jobs: Job[]
@@ -60,12 +74,32 @@ export function JobList({
   onApprove,
 }: ListProps) {
   const [limit, setLimit] = useState(PAGE)
-  useEffect(() => setLimit(PAGE), [tab, query])
-  const hidden = jobs.length - limit
+  const [chosen, setFilter] = useState<Filter>('all')
+  // Filters are for Jobs only, and Mine needs to know who you are.
+  const filter: Filter = tab !== 'jobs' || (chosen === 'mine' && !viewer) ? 'all' : chosen
+  const shown = applyFilter(jobs, filter, viewer?.login)
+  useEffect(() => setLimit(PAGE), [tab, query, filter])
+  const hidden = shown.length - limit
 
   return (
     <>
       {tab === 'others' && !query && <OthersIntro viewer={viewer} />}
+      {tab === 'jobs' && jobs.length > 0 && (
+        <div className="filters" role="group" aria-label="Show">
+          {FILTERS.filter((f) => f.key !== 'mine' || viewer).map((f) => (
+            <button
+              key={f.key}
+              type="button"
+              className="filter"
+              aria-pressed={filter === f.key}
+              onClick={() => setFilter(f.key)}
+            >
+              {f.label}
+              <span className="filter-count">{applyFilter(jobs, f.key, viewer?.login).length}</span>
+            </button>
+          ))}
+        </div>
+      )}
       <div className="card">
         {loading && !jobs.length ? (
           <Skeleton />
@@ -84,9 +118,11 @@ export function JobList({
           </div>
         ) : !jobs.length ? (
           <Empty tab={tab} viewer={viewer} onNew={onNew} />
+        ) : !shown.length ? (
+          <FilterEmpty filter={filter} onFilter={setFilter} />
         ) : (
           <ul className="list">
-            {jobs.slice(0, limit).map((job) => (
+            {shown.slice(0, limit).map((job) => (
               <Row key={job.key} tab={tab} job={job} viewer={viewer} pending={pending[job.key]} onApprove={onApprove} />
             ))}
           </ul>
@@ -237,6 +273,24 @@ function Empty({ tab, viewer, onNew }: { tab: Tab; viewer: Viewer | null; onNew(
           <Icon name="plus" size={15} /> {viewer?.isAdmin ? 'New job' : 'Propose a job'}
         </button>
       )}
+    </div>
+  )
+}
+
+function FilterEmpty({ filter, onFilter }: { filter: Filter; onFilter(filter: Filter): void }) {
+  const mine = filter === 'mine'
+  return (
+    <div className="empty">
+      <span className="empty-icon">
+        <Icon name={mine ? 'inbox' : 'circleCheck'} size={22} />
+      </span>
+      <div className="empty-title">{mine ? "You're not on any job yet" : 'Everything is picked up'}</div>
+      <div className="empty-text">
+        {mine ? 'Pick one up and it shows up here.' : 'Every job has someone on it. New ones show up here.'}
+      </div>
+      <button className="btn btn-outline" onClick={() => onFilter(mine ? 'free' : 'all')}>
+        {mine ? 'See what is up for grabs' : 'Show all jobs'}
+      </button>
     </div>
   )
 }

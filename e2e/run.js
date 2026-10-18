@@ -365,8 +365,8 @@ async function main() {
 
   const browser = await chromium.launch()
   const problems = []
-  async function newPage({ colorScheme = 'light', snapshot = data } = {}) {
-    const ctx = await browser.newContext({ viewport: { width: 1280, height: 860 }, deviceScaleFactor: 1, colorScheme })
+  async function newPage({ colorScheme = 'light', snapshot = data, viewport = { width: 1280, height: 860 } } = {}) {
+    const ctx = await browser.newContext({ viewport, deviceScaleFactor: 1, colorScheme })
     // The site itself, straight from the build (plus the sample data.json).
     await ctx.route(BASE + '**', (route) => {
       const path = new URL(route.request().url()).pathname
@@ -447,6 +447,32 @@ async function main() {
   await p.waitForSelector('.row-mine:has-text("Collect 200 accented-English samples")')
   await p.screenshot({ path: OUT + '/13-mine.png' })
   step('the job you picked up is highlighted in the list')
+
+  const shownTitles = async () => (await p.locator('.row .row-title').allInnerTexts()).sort()
+  const openJobs = (pick) =>
+    S.issues
+      .filter((i) => i.state === 'open' && i.labels.some((l) => l.name === 'job') && pick(i))
+      .map((i) => i.title)
+      .sort()
+  await p.click('.filter:has-text("Mine")')
+  assert.deepEqual(await shownTitles(), ['Collect 200 accented-English samples'], 'Mine: what you are on')
+  await p.click('.filter:has-text("Up for grabs")')
+  assert.deepEqual(
+    await shownTitles(),
+    openJobs((i) => !i.assignees.length),
+    'Up for grabs: what nobody is on',
+  )
+  assert.equal(await p.locator('.filter[aria-pressed=true]').count(), 1)
+  assert.equal(
+    await p.locator('.filter:has-text("Up for grabs") .filter-count').innerText(),
+    String(openJobs((i) => !i.assignees.length).length),
+  )
+  await p.click('.filter:has-text("All")')
+  assert.deepEqual(
+    await shownTitles(),
+    openJobs(() => true),
+  )
+  step('quick filters: Mine and Up for grabs, with counts')
   await p.goto(BASE + '#/jobs/2')
   await p.click('.drawer-foot button:has-text("Mark done")')
   await until(() => issue(2).state === 'closed' && issue(2).state_reason === 'completed', 'bot to close #2')
@@ -828,6 +854,39 @@ async function main() {
   await sleep(300)
   assert.equal(await admin2.locator(`.row:has-text("${PRIVATE_TITLE}")`).count(), 0)
   step('signing out hides private jobs right away')
+
+  // ---------------- Phone ----------------
+  console.log('Phone layout')
+  const phone = await newPage({ viewport: { width: 375, height: 740 } })
+  const overflow = () =>
+    phone.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
+  await phone.goto(BASE + '#/jobs')
+  await phone.waitForSelector('.row-title')
+  await sleep(400)
+  await phone.screenshot({ path: OUT + '/30-phone-list.png' })
+  assert.equal(await overflow(), 0, 'the list fits a phone screen')
+  await phone.goto(BASE + '#/jobs/6')
+  await phone.waitForSelector('.drawer .comment')
+  await sleep(400)
+  await phone.screenshot({ path: OUT + '/31-phone-job.png', fullPage: true })
+  assert.equal(await overflow(), 0, 'a job fits too')
+  await phone.keyboard.press('Escape')
+  await phone.waitForSelector('.drawer', { state: 'detached' })
+  await phone.click('header .btn:has-text("Sign in"), header button:has-text("Sign in")')
+  await phone.waitForSelector('.modal')
+  await sleep(400)
+  await phone.screenshot({ path: OUT + '/32-phone-signin.png' })
+  assert.equal(await overflow(), 0, 'sign-in fits')
+  await phone.fill('.modal input[type=password]', 'member-token')
+  await phone.click('.modal button:has-text("Connect")')
+  await phone.waitForSelector('.modal', { state: 'detached' })
+  await phone.goto(BASE + '#/others')
+  await phone.click('.page-head >> text=Propose a job')
+  await phone.waitForSelector('.modal')
+  await sleep(400)
+  await phone.screenshot({ path: OUT + '/33-phone-form.png' })
+  assert.equal(await overflow(), 0, 'the form fits')
+  step('phone screens: list, job, sign-in and form fit without sideways scrolling')
 
   await Promise.all(S.botRuns)
   const confused = S.comments.filter((c) => c.reactions?.confused && c.id > 5000)
