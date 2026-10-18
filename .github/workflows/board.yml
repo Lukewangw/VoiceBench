@@ -57,7 +57,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      checks: read
+      actions: read
     # Runs for one issue go one at a time, and a newer event replaces a run still waiting. Each run
     # works through all of that issue's pending commands, so a replaced run loses nothing.
     concurrency:
@@ -71,16 +71,22 @@ jobs:
           retries: 3
           script: |
             // A push (or a manual run) brings its own commit, and this job only runs once its tests
-            // pass. Issue, comment and scheduled runs use the newest commit on main whose tests
-            // passed, so untested code never runs here, even if it is the latest commit.
+            // pass. Issue, comment and scheduled runs use the newest commit pushed to main whose Test
+            // job passed, so untested code (a pull request's branch, say) never runs here.
             if (['push', 'workflow_dispatch'].includes(context.eventName)) return core.setOutput('sha', context.sha)
-            const { data: commits } = await github.rest.repos.listCommits({ ...context.repo, per_page: 30 })
-            for (const commit of commits) {
-              const { data } = await github.rest.checks.listForRef({ ...context.repo, ref: commit.sha, check_name: 'Test' })
-              if (data.check_runs.some((run) => run.conclusion === 'success')) return core.setOutput('sha', commit.sha)
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              ...context.repo,
+              workflow_id: 'board.yml',
+              branch: 'main',
+              event: 'push',
+              per_page: 30,
+            })
+            for (const run of data.workflow_runs) {
+              const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({ ...context.repo, run_id: run.id })
+              if (jobs.jobs.some((job) => job.name === 'Test' && job.conclusion === 'success'))
+                return core.setOutput('sha', run.head_sha)
             }
-            core.warning('None of the last 30 commits on main passed its tests, so nothing ran.')
-            core.setOutput('sha', '')
+            core.setFailed('None of the last 30 pushes to main passed its tests, so nothing ran.')
       - uses: actions/checkout@v7
         if: steps.tested.outputs.sha != ''
         with:
@@ -106,7 +112,7 @@ jobs:
     permissions:
       contents: read
       issues: read
-      checks: read
+      actions: read
       pages: write
       id-token: write
     # One deploy at a time; a newer event replaces any deploy still waiting, and the snapshot is taken
@@ -141,16 +147,22 @@ jobs:
           retries: 3
           script: |
             // A push (or a manual run) brings its own commit, and this job only runs once its tests
-            // pass. Issue, comment and scheduled runs use the newest commit on main whose tests
-            // passed, so untested code never runs here, even if it is the latest commit.
+            // pass. Issue, comment and scheduled runs use the newest commit pushed to main whose Test
+            // job passed, so untested code (a pull request's branch, say) never runs here.
             if (['push', 'workflow_dispatch'].includes(context.eventName)) return core.setOutput('sha', context.sha)
-            const { data: commits } = await github.rest.repos.listCommits({ ...context.repo, per_page: 30 })
-            for (const commit of commits) {
-              const { data } = await github.rest.checks.listForRef({ ...context.repo, ref: commit.sha, check_name: 'Test' })
-              if (data.check_runs.some((run) => run.conclusion === 'success')) return core.setOutput('sha', commit.sha)
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              ...context.repo,
+              workflow_id: 'board.yml',
+              branch: 'main',
+              event: 'push',
+              per_page: 30,
+            })
+            for (const run of data.workflow_runs) {
+              const { data: jobs } = await github.rest.actions.listJobsForWorkflowRun({ ...context.repo, run_id: run.id })
+              if (jobs.jobs.some((job) => job.name === 'Test' && job.conclusion === 'success'))
+                return core.setOutput('sha', run.head_sha)
             }
-            core.warning('None of the last 30 commits on main passed its tests, so nothing ran.')
-            core.setOutput('sha', '')
+            core.setFailed('None of the last 30 pushes to main passed its tests, so nothing ran.')
       - uses: actions/checkout@v7
         if: steps.tested.outputs.sha != ''
         with:

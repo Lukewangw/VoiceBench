@@ -37,9 +37,11 @@ function fakeGitHub(issue, { assignable = [ADMIN, MEMBER, 'bob'], events = [] } 
           state.reactions.push(content)
           return { data: {} }
         },
-        listForIssueComment: async ({ comment_id }) => ({
-          data: state.comments.find((x) => x.id === comment_id).reactionList,
-        }),
+        async listForIssueComment({ comment_id }) {
+          const c = state.comments.find((x) => x.id === comment_id)
+          if (!c) throw fail(404)
+          return { data: c.reactionList }
+        },
       },
       issues: {
         get: async () => ({ data: copy() }),
@@ -410,4 +412,43 @@ test('a form issue still labelled only "proposal" is filed by a later event', as
   assert.equal(gh.state.issue.body, '### Description\n\nBook the studio\n\n### Due date\n\nOct 31 (hard deadline)\n')
   await event(gh, 'issues', 'edited')
   assert.deepEqual(labels(gh.state), ['P1', 'job'], 'and only once')
+})
+
+test('a replaced "labeled" run still leaves one priority: the one set last', async () => {
+  const events = [
+    { event: 'labeled', label: { name: 'P0' }, actor: { login: ADMIN } },
+    { event: 'labeled', label: { name: 'P3' }, actor: { login: ADMIN } },
+  ]
+  const gh = fakeGitHub({ ...job(), labels: [{ name: 'job' }, { name: 'P0' }, { name: 'P3' }] }, { events })
+  await event(gh, 'issues', 'assigned')
+  assert.deepEqual(labels(gh.state), ['P3', 'job'])
+})
+
+test('a deleted command that had reactions does not fail the run', async () => {
+  const gh = fakeGitHub(job())
+  const gone = await say(gh, MEMBER, '/take', { silent: true })
+  gone.reactions['+1'] = 1 // a teammate liked it, then it was deleted
+  const later = await say(gh, ADMIN, '/p0', { silent: true })
+  gh.state.comments = gh.state.comments.filter((c) => c.id !== gone.id)
+  await event(gh, 'issue_comment', 'edited', { comment: structuredClone(gone) })
+  assert.deepEqual(gh.state.issue.assignees, [])
+  assert.deepEqual(labels(gh.state), ['P0', 'job'])
+  assert.equal(later.reactionList.length, 1)
+})
+
+test('filing again keeps a job an admin approved with /approve', async () => {
+  const events = [{ event: 'labeled', label: { name: 'job' }, actor: BOT }]
+  const body = formatBody({ description: 'x', priority: 'P1' })
+  const gh = fakeGitHub({ number: 12, user: { login: MEMBER }, labels: [{ name: 'job' }], body }, { events })
+  await event(gh, 'issues', 'edited')
+  assert.deepEqual(labels(gh.state), ['P1', 'job'])
+})
+
+test("filing leaves a description's own Priority section alone", async () => {
+  const body =
+    '### Description\n\nShip it.\n\n## Priority\n\nHigh for the demo, low for the paper.\n\n### Due date\n\n_No response_\n'
+  const gh = fakeGitHub({ number: 13, user: { login: ADMIN }, labels: [{ name: 'proposal' }], body })
+  await opened(gh)
+  assert.equal(gh.state.issue.body, body)
+  assert.deepEqual(labels(gh.state), ['P2', 'job'])
 })

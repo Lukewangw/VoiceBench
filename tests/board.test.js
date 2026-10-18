@@ -114,6 +114,8 @@ test('parseDue reads notes after a date, day-first dates and Chinese dates', () 
   assert.equal(parseDue('31/10/2026', today), '2026-10-31')
   assert.equal(parseDue('10月31日', today), '2026-10-31')
   assert.equal(parseDue('2027年1月5号', today), '2027-01-05')
+  assert.equal(parseDue('Jan 15, 2027 (after the holidays)', today), '2027-01-15')
+  assert.equal(parseDue('Oct 31, 2027 (hard deadline)', today), '2027-10-31')
   assert.equal(parseDue('end of October', today), null)
   assert.equal(parseDue('13/13', today), null)
 })
@@ -201,6 +203,47 @@ test('editing the description keeps the answers as written', () => {
   const unfiled = updateBody(formBody('2026-10-30'), { description: 'More', priority: 'P0' })
   assert.deepEqual(parseBody(unfiled), { description: 'More', priority: 'P0', due: '2026-10-30', hasPriority: true })
   assert.equal(parseBody(updateBody('Fix it\n\n### Due date\n\n2026-10-30', { priority: 'P3' })).priority, 'P3')
+})
+
+test("a description's own Priority section is never taken for the field", () => {
+  const body =
+    '### Description\n\nShip it.\n\n## Priority\n\nHigh for the demo, low for the paper.\n\n### Due date\n\n2026-10-30\n'
+  assert.equal(parseBody(body).hasPriority, false)
+  assert.equal(parseBody(body).description, 'Ship it.\n\n## Priority\n\nHigh for the demo, low for the paper.')
+  assert.equal(updateBody(body, { priority: null }), body)
+  for (const answer of ['None', 'TBD', '### Must have', '']) {
+    const other = `Plan\n\n### Priority\n\n${answer}\n`
+    assert.equal(parseBody(other).hasPriority, false, answer)
+    assert.equal(updateBody(other, { priority: null }), other, answer)
+  }
+})
+
+test('reading headings takes linear time, whatever the issue text', () => {
+  const evil = '## a' + ' '.repeat(50_000) + 'b'
+  const started = Date.now()
+  parseBody(Array(20).fill(evil).join('\n'))
+  assert.ok(Date.now() - started < 1000, `took ${Date.now() - started} ms`)
+})
+
+test('saving an edit leaves unchanged answers as written', () => {
+  const body = updateBody(formBody('Oct 31 (hard deadline)'), { priority: null })
+  assert.ok(
+    updateBody(body, { description: 'Collect 300.', due: '2026-10-31' }).includes('Due date\n\nOct 31 (hard deadline)'),
+  )
+  const tbd = updateBody(formBody('TBD'), { priority: null })
+  assert.ok(updateBody(tbd, { description: 'x', due: null }).includes('Due date\n\nTBD'))
+  // Before filing: the same priority stays as the author wrote it.
+  assert.ok(updateBody(formBody('TBD').replace('P1 · High', 'High'), { priority: 'P1' }).includes('Priority\n\nHigh\n'))
+})
+
+test('editing a job whose due date is unreadable keeps one Due date section', () => {
+  const body = updateBody(formBody('end of October'), { priority: null })
+  const edited = updateBody(body, { description: parseBody(body).description + '\n\nMore.', due: null })
+  assert.equal(edited.match(/### Due date/g).length, 1)
+  const dated = updateBody(edited, { due: '2026-10-31' })
+  assert.equal(dated.match(/### Due date/g).length, 1)
+  assert.equal(parseBody(dated).due, '2026-10-31')
+  assert.ok(dated.includes('end of October') && dated.includes('More.'))
 })
 
 test('parseCommands finds commands and aliases', () => {

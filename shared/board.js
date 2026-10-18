@@ -111,7 +111,15 @@ export function parseDue(text, today = new Date()) {
   const s = String(text).trim().replace(/\s+/g, ' ')
   if (!s || NO_ANSWER.test(s)) return null
   const year = today.getFullYear()
-  return readDate(s, year) ?? readDate(s.replace(/ ?[(（[].*$| [-–—] .*$|[,;，；] .*$/, ''), year)
+  const whole = readDate(s, year)
+  if (whole) return whole
+  // A note after the date ("Jan 15, 2027 (after the holidays)"): the longest part before one that reads as a date.
+  const cuts = [...s.matchAll(/ ?[(（[]| [-–—] |[,;，；] /g)].map((m) => m.index).reverse()
+  for (const at of cuts) {
+    const date = readDate(s.slice(0, at), year)
+    if (date) return date
+  }
+  return null
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +143,18 @@ const FIELDS = {
 const HEADINGS = { description: '### Description', priority: '### Priority', due: '### Due date' }
 const EMPTY = '_No response_'
 const READ = { priority: (line) => parsePriority(line), due: (line) => parseDue(line) }
+// The form's answer to "Priority" ("P1 · High"), or just "P1" or "High". Only that counts as the
+// field, so a description's own "Priority" section is never taken for it (or removed by the bot).
+const PRIORITY_ANSWER = /^(p[0-3]( *[·:\-–—]? *(urgent|high|medium|low))?|urgent|critical|high|medium|med|normal|low)$/i
+
+/** A level 2–4 heading's text, or null. Issue text is untrusted, so no backtracking regex here. */
+function headingText(line) {
+  const start = /^#{2,4}[ \t]/.exec(line)?.[0].length
+  if (!start) return null
+  let end = line.length
+  while (end > start && ' \t#'.includes(line[end - 1])) end--
+  return line.slice(start, end).trim()
+}
 
 function fieldFor(heading) {
   const h = heading.trim().toLowerCase().replace(/:$/, '').trim()
@@ -162,18 +182,23 @@ function layout(body) {
   lines.forEach((line, at) => {
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
     else if (!inFence) {
-      const key = fieldFor(/^#{2,4}\s+(.+?)\s*#*\s*$/.exec(line)?.[1] ?? '')
+      const key = fieldFor(headingText(line) ?? '')
       if (key) found[key].push(at)
     }
   })
-  const answers = (key) => (at) => {
-    const next = lines.slice(at + 1).find((line) => line.trim())
-    return next === undefined || /^#/.test(next) || NO_ANSWER.test(next.trim()) || READ[key](next) !== null
+  const nextLine = (at) => {
+    for (let i = at + 1; i < lines.length; i++) if (lines[i].trim()) return lines[i].trim()
+    return undefined
   }
+  const isDue = (at) => {
+    const next = nextLine(at)
+    return next === undefined || next.startsWith('#') || NO_ANSWER.test(next) || parseDue(next) !== null
+  }
+  const isPriority = (at) => PRIORITY_ANSWER.test(nextLine(at) ?? '')
   const heads = {
     description: found.description[0],
-    priority: found.priority.filter(answers('priority')).at(-1),
-    due: found.due.filter(answers('due')).at(-1),
+    priority: found.priority.filter(isPriority).at(-1),
+    due: found.due.filter(isDue).at(-1),
   }
   const starts = Object.values(heads)
     .filter((at) => at !== undefined)
@@ -195,8 +220,10 @@ function layout(body) {
 function answerAt(lines, section, read) {
   if (!section) return -1
   for (let i = section.from; i < section.to; i++) {
-    if (!lines[i].trim()) continue
-    return read(lines[i]) !== null || NO_ANSWER.test(lines[i].trim()) ? i : -1
+    const line = lines[i].trim()
+    if (!line) continue
+    const answers = read === READ.priority ? PRIORITY_ANSWER.test(line) : read(line) !== null
+    return answers || NO_ANSWER.test(line) ? i : -1
   }
   return -1
 }
@@ -247,7 +274,7 @@ function withDescription(body, description) {
   }
   const sections = [`${HEADINGS.description}\n\n${description.trim() || EMPTY}`]
   if (priority) sections.push(`${HEADINGS.priority}\n\n${answer(priority, READ.priority)}`)
-  sections.push(`${HEADINGS.due}\n\n${due ? answer(due, READ.due) : EMPTY}`)
+  if (due) sections.push(`${HEADINGS.due}\n\n${answer(due, READ.due)}`)
   return sections.join('\n\n') + '\n'
 }
 
@@ -290,9 +317,12 @@ function withoutPriority(body) {
 export function updateBody(body, patch) {
   let next = String(body ?? '')
   if ('description' in patch) next = withDescription(next, patch.description ?? '')
-  if ('priority' in patch)
+  // An answer that already says the same stays as written ("Oct 31 (hard deadline)").
+  if ('priority' in patch && (!patch.priority || parseBody(next).priority !== patch.priority))
     next = patch.priority ? withAnswer(next, 'priority', priorityLabel(patch.priority)) : withoutPriority(next)
-  if ('due' in patch && (patch.due || layout(next).due)) next = withAnswer(next, 'due', patch.due || EMPTY)
+  const due = 'due' in patch ? patch.due || null : undefined
+  if (due !== undefined && parseBody(next).due !== due && (due || layout(next).due))
+    next = withAnswer(next, 'due', due || EMPTY)
   return next
 }
 

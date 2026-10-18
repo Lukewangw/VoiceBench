@@ -40,7 +40,9 @@ export default async function triage({ github, context, core }) {
   else {
     // A burst of events can skip an issue's "opened" run; any later event files it instead.
     await bot.fileIfUnfiled()
-    if (eventName === 'issues' && payload.action === 'labeled') await bot.keepOnePriority(payload.label?.name)
+    // So can a "labeled" run, so every run makes sure only one priority label is left.
+    const added = eventName === 'issues' && payload.action === 'labeled' ? payload.label?.name : undefined
+    await bot.keepOnePriority(isPriorityLabel(added ?? '') ? added : undefined)
   }
   // A queued run is dropped when a newer one for the same issue arrives, so every run works through
   // all of the issue's pending commands, whatever event brought it here.
@@ -133,12 +135,18 @@ export function createBot({ github, core, owner, repo, number }) {
   async function answered(comment) {
     const counts = comment.reactions ?? {}
     if (!(counts['+1'] > 0 || counts.confused > 0)) return false
-    const reactions = await github.paginate(github.rest.reactions.listForIssueComment, {
-      owner,
-      repo,
-      comment_id: comment.id,
-      per_page: 100,
-    })
+    let reactions
+    try {
+      reactions = await github.paginate(github.rest.reactions.listForIssueComment, {
+        owner,
+        repo,
+        comment_id: comment.id,
+        per_page: 100,
+      })
+    } catch (error) {
+      if (error.status === 404) return true // deleted: nothing left to do
+      throw error
+    }
     return reactions.some((r) => isBot(r.user) && (r.content === '+1' || r.content === 'confused'))
   }
 
@@ -146,7 +154,13 @@ export function createBot({ github, core, owner, repo, number }) {
   async function approvedByAdmin() {
     const events = await github.paginate(github.rest.issues.listEvents, { ...ref, per_page: 100 })
     for (const e of events) {
-      if (e.event === 'labeled' && same(e.label?.name, JOB_LABEL) && (await isAdmin(e.actor?.login))) return true
+      // Only admins can add labels, and the bot only does on an admin's /approve.
+      if (
+        e.event === 'labeled' &&
+        same(e.label?.name, JOB_LABEL) &&
+        (isBot(e.actor) || (await isAdmin(e.actor?.login)))
+      )
+        return true
     }
     return false
   }
@@ -184,14 +198,20 @@ export function createBot({ github, core, owner, repo, number }) {
     if (unlabelled || (!priorityFromLabels(issue.labels) && parseBody(issue.body).hasPriority)) await fileNewIssue()
   }
 
+  /** Leaves one priority label: the one just added if it's still there, else the one added last. */
   async function keepOnePriority(added) {
-    if (!added || !isPriorityLabel(added)) return
     const issue = await getIssue()
-    // Runs can start late: if a newer change already replaced this label, that one stays.
-    if (!hasLabel(issue.labels, added)) return
+    const current = labelNames(issue.labels).filter(isPriorityLabel)
+    let keep = added && hasLabel(issue.labels, added) ? added : null
+    if (!keep) {
+      if (current.length < 2) return
+      const events = await github.paginate(github.rest.issues.listEvents, { ...ref, per_page: 100 })
+      const last = events.filter((e) => e.event === 'labeled' && current.some((l) => same(l, e.label?.name))).at(-1)
+      keep = last?.label?.name ?? priorityFromLabels(issue.labels)
+    }
     await removeLabels(
       issue,
-      PRIORITIES.map((p) => p.key).filter((key) => !same(key, added)),
+      PRIORITIES.map((p) => p.key).filter((key) => !same(key, keep)),
     )
   }
 
@@ -212,7 +232,6 @@ export function createBot({ github, core, owner, repo, number }) {
 
     let issue = await getIssue()
     for (const pending of queue) {
-      if (await answered(pending)) continue
       // As it is now: it may have been edited, or deleted (then there's nothing to do).
       const comment = await getComment(pending.id)
       if (comment && !(await answered(comment))) issue = await handle(comment, issue)
