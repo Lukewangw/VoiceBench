@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { shortDate, timeAgo } from '../lib/format'
 import { isOn, type Job } from '../lib/model'
 import type { Viewer } from '../state'
@@ -81,6 +81,24 @@ export function JobList({
   useEffect(() => setLimit(PAGE), [tab, query, filter])
   const hidden = shown.length - limit
 
+  // An approved proposal leaves Others, and its button with it; keyboard focus goes to the row
+  // that takes its place (or the tabs, if it was the last one).
+  const refocus = useRef<{ key: string; index: number } | null>(null)
+  useEffect(() => {
+    const r = refocus.current
+    if (!r || shown.some((j) => j.key === r.key)) return
+    refocus.current = null
+    if (document.activeElement && document.activeElement !== document.body) return
+    const rows = document.querySelectorAll<HTMLElement>('.list .row-link')
+    ;(rows[Math.min(r.index, rows.length - 1)] ?? document.querySelector<HTMLElement>('.tab.active'))?.focus()
+  }, [shown])
+  const approve = async (job: Job, index: number) => {
+    refocus.current = { key: job.key, index }
+    await onApprove(job)
+    // Still listed (it didn't go through): nothing to move.
+    window.setTimeout(() => refocus.current?.key === job.key && (refocus.current = null), 2000)
+  }
+
   return (
     <>
       {tab === 'others' && !query && <OthersIntro viewer={viewer} />}
@@ -122,8 +140,15 @@ export function JobList({
           <FilterEmpty filter={filter} onFilter={setFilter} />
         ) : (
           <ul className="list">
-            {shown.slice(0, limit).map((job) => (
-              <Row key={job.key} tab={tab} job={job} viewer={viewer} pending={pending[job.key]} onApprove={onApprove} />
+            {shown.slice(0, limit).map((job, index) => (
+              <Row
+                key={job.key}
+                tab={tab}
+                job={job}
+                viewer={viewer}
+                pending={pending[job.key]}
+                onApprove={(j) => approve(j, index)}
+              />
             ))}
           </ul>
         )}

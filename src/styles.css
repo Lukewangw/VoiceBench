@@ -25,6 +25,7 @@
   --green-soft: #e3f5ea;
   --red: #cf3a40;
   --red-soft: #fdebeb;
+  --on-red: #ffffff;
   --gray: #646c72;
   --gray-soft: #eef0f1;
   --violet: #6e56cf;
@@ -80,6 +81,7 @@
     --green-soft: #12301f;
     --red: #ff8a8e;
     --red-soft: #3a1a1c;
+    --on-red: #2b0b0d;
     --gray: #a1aab0;
     --gray-soft: #232a2e;
     --violet: #b9a8ff;
@@ -616,7 +618,7 @@ button {
 }
 .btn-danger {
   background: var(--red);
-  color: #fff;
+  color: var(--on-red);
 }
 .btn-danger:hover:not(:disabled) {
   filter: brightness(0.95);
@@ -1180,19 +1182,23 @@ button {
   font-size: 12px;
   font-weight: 750;
   cursor: pointer;
-  opacity: 0.55;
-  filter: saturate(0.6);
   transition:
-    opacity 0.15s,
-    filter 0.15s;
+    background 0.15s,
+    color 0.15s,
+    border-color 0.15s;
 }
 .prio-opt-name {
   font-weight: 600;
 }
-.prio-opt:hover:not(:disabled),
-.prio-opt.selected {
-  opacity: 1;
-  filter: none;
+/* Only the chosen priority wears its color; the others stay quiet but readable. */
+.prio-opt:not(.selected) {
+  background: transparent;
+  color: var(--text-2);
+  border-color: var(--border);
+}
+.prio-opt:not(.selected):hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--border-strong);
 }
 .prio-opt.selected {
   border-color: currentColor;
@@ -1362,8 +1368,13 @@ button {
   color: var(--text);
   font-weight: 620;
 }
-.event.failed {
-  opacity: 0.6;
+.event-text {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.event.failed,
+.event.failed strong {
+  color: var(--text-3);
 }
 .event-time {
   margin-left: auto;
@@ -1824,7 +1835,7 @@ textarea.input {
 }
 .toast-error {
   background: var(--red);
-  color: #fff;
+  color: var(--on-red);
 }
 .toast-info .icon {
   opacity: 0.7;
@@ -1931,9 +1942,15 @@ textarea.input {
   .row .avatar-stack .avatar:nth-child(n + 3) {
     display: none;
   }
+  /* Hidden but still read out: on a phone these buttons show only their icon. */
   .row-action-text,
   .row-pending-text {
-    display: none;
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
   .row-action {
     padding: 0 9px;

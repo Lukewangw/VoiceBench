@@ -18,7 +18,7 @@ export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const dialogRef = useRef<HTMLDivElement>(null)
-  useDialog(dialogRef, onClose, inputRef)
+  useDialog(dialogRef, onClose, { initialFocus: inputRef })
 
   const submit = async () => {
     if (!token.trim()) return
@@ -122,7 +122,11 @@ export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
             </span>
           </label>
 
-          {error && <div className="form-error">{error}</div>}
+          {error && (
+            <div className="form-error" role="alert">
+              {error}
+            </div>
+          )}
 
           <div className="privacy">
             <Icon name="lock" size={14} />

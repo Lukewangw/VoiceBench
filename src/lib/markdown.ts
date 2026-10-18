@@ -11,7 +11,8 @@ DOMPurify.addHook('uponSanitizeElement', (node, data) => {
 })
 
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {
-  if (node.tagName === 'A') {
+  // Links open in a new tab, never in place of the board.
+  if (node.hasAttribute('href')) {
     node.setAttribute('target', '_blank')
     node.setAttribute('rel', 'noopener noreferrer')
   }
@@ -19,6 +20,8 @@ DOMPurify.addHook('afterSanitizeAttributes', (node) => {
 })
 
 const OPTIONS = {
+  // Plain HTML only: SVG and MathML can draw anywhere on the page (over the board's own controls).
+  USE_PROFILES: { html: true },
   // No styling or page-level hooks from untrusted text, so it can't dress itself up as board UI.
   FORBID_TAGS: ['style', 'form', 'button', 'textarea', 'select', 'option', 'label', 'dialog'],
   FORBID_ATTR: ['style', 'class', 'id', 'name', 'tabindex', 'autofocus'],

@@ -38,13 +38,18 @@ function useRoute() {
   const go = useCallback((tab: Tab, job: string | null = null) => {
     location.hash = `/${tab}${job ? `/${job}` : ''}`
   }, [])
-  return [route, go] as const
+  // Swaps the address without a new history entry, so Back still leaves the page as expected.
+  const replace = useCallback((tab: Tab) => {
+    history.replaceState(history.state, '', `#/${tab}`)
+    setRoute(readRoute())
+  }, [])
+  return [route, go, replace] as const
 }
 
 export function App() {
   const auth = useAuth()
   const board = useBoard(auth)
-  const [route, go] = useRoute()
+  const [route, go, replace] = useRoute()
   const [form, setForm] = useState<{ job?: Job } | null>(null)
   const [signingIn, setSigningIn] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
@@ -65,14 +70,15 @@ export function App() {
   const selected = route.job ? (board.jobs.find((j) => j.key === route.job) ?? null) : null
 
   useEffect(() => {
-    if (route.job && !board.loading && !selected) {
+    // Only once the board has loaded: if loading failed, the job may well exist (and opens on retry).
+    if (route.job && !board.loading && !board.error && !selected) {
       toast(
         `Couldn't find that job${route.job.startsWith('p') ? ' (private jobs need an admin sign-in)' : ''}.`,
         'error',
       )
-      go(route.tab)
+      replace(route.tab)
     }
-  }, [route.job, route.tab, board.loading, selected, go])
+  }, [route.job, route.tab, board.loading, board.error, selected, replace])
 
   useEffect(() => {
     document.title = selected ? `${selected.title} · ${TITLE}` : `${TITLE} · Job board`

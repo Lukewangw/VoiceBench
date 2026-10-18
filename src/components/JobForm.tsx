@@ -28,7 +28,7 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
   const titleRef = useRef<HTMLInputElement>(null)
 
   const dialogRef = useRef<HTMLDivElement>(null)
-  useDialog(dialogRef, onClose, titleRef)
+  useDialog(dialogRef, onClose, { initialFocus: titleRef })
 
   const editing = !!job
   const isAdmin = !!viewer?.isAdmin
@@ -78,7 +78,8 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
             e.preventDefault()
             void submit()
           }}
-          onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && void submit()}
+          // Like the Save button: the browser checks the fields first (a half-typed date, say).
+          onKeyDown={(e) => (e.metaKey || e.ctrlKey) && e.key === 'Enter' && e.currentTarget.requestSubmit()}
         >
           <div className="modal-head">
             <h2 id="form-title">{heading}</h2>
@@ -223,7 +224,11 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
             </div>
           )}
 
-          {error && <div className="form-error">{error}</div>}
+          {error && (
+            <div className="form-error" role="alert">
+              {error}
+            </div>
+          )}
 
           <div className="modal-foot">
             {viewer ? (

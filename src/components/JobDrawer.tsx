@@ -41,7 +41,9 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   const [busy, setBusy] = useState<string | null>(null)
   const [declining, setDeclining] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
-  useDialog(panelRef, onClose)
+  useDialog(panelRef, onClose, { level: 0 })
+  // What started the running action, so keyboard focus can stay there once it's done.
+  const actionFrom = useRef<HTMLElement | null>(null)
 
   useEffect(() => {
     void loadNotes(job)
@@ -50,6 +52,7 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
 
   const run = async (key: string, fn: () => Promise<unknown>) => {
     if (!viewer) return onSignIn()
+    actionFrom.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
     setBusy(key)
     try {
       await fn()
@@ -62,6 +65,20 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
     }
   }
 
+  // An action disables its button while it runs and may replace it (Pick up becomes Mark done),
+  // which drops keyboard focus to the page. Put it back on that button if it's still there, else
+  // on the drawer itself (not on whatever replaced the button: a second Enter shouldn't mark a job
+  // done that was just picked up).
+  useEffect(() => {
+    const from = actionFrom.current
+    const panel = panelRef.current
+    if (busy || !from || !panel) return
+    actionFrom.current = null
+    const active = document.activeElement
+    if (active && active !== document.body && active !== panel && panel.contains(active)) return
+    ;(panel.contains(from) && !from.matches(':disabled') ? from : panel).focus()
+  }, [busy])
+
   const mine = isOn(job, viewer?.login)
   const isAuthor = !!viewer && sameLogin(viewer.login, job.author.login)
   const editable = actions.canEditDetails(job)
@@ -69,8 +86,9 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   const status = STATUS[job.status]
   const link = `${location.origin}${location.pathname}#/${tab}/${job.key}`
 
+  // Keyed by action, so a new action never takes over the old button (and its keyboard focus).
   const button = (key: string, label: string, icon: IconName, fn: () => Promise<unknown>, kind = 'btn-outline') => (
-    <button className={`btn ${kind}`} disabled={!!busy || !!pending} onClick={() => run(key, fn)}>
+    <button key={key} className={`btn ${kind}`} disabled={!!busy || !!pending} onClick={() => run(key, fn)}>
       {busy === key ? <Spinner /> : <Icon name={icon} />} {label}
     </button>
   )
@@ -454,7 +472,7 @@ function Activity({ job, notes }: { job: Job; notes: Note[] }) {
         n.commands.length > 0 && (
           <li key={`e${n.id}`} className={`event${n.failed ? ' failed' : ''}`}>
             <Avatar person={n.author} size={18} />
-            <span>
+            <span className="event-text">
               <strong>{n.author.login}</strong> {n.commands.map(describe).join(', ')}
               {n.failed && <span className="muted"> (didn't go through)</span>}
             </span>
@@ -481,6 +499,7 @@ function Composer({
 }) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
+  const box = useRef<HTMLTextAreaElement>(null)
   useEffect(() => setText(''), [job.key])
 
   if (!viewer) {
@@ -496,6 +515,13 @@ function Composer({
     try {
       await actions.comment(job, text.trim())
       setText('')
+      // Sent with the button, which is now disabled: back to the box for the next comment.
+      if (
+        !document.activeElement ||
+        document.activeElement === document.body ||
+        document.activeElement.closest('.composer')
+      )
+        box.current?.focus()
     } catch (e) {
       toast(errorText(e), 'error')
     } finally {
@@ -507,6 +533,7 @@ function Composer({
       <Avatar person={viewer} size={28} />
       <div className="composer-box">
         <textarea
+          ref={box}
           className="input"
           rows={2}
           placeholder="Write a comment…"

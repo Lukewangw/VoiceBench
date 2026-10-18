@@ -505,8 +505,10 @@ async function main() {
   step('signed in as an admin')
 
   const row = p.locator('.row', { hasText: 'Record a demo video' })
-  await row.locator('button:has-text("Approve")').click()
+  await row.locator('button:has-text("Approve")').focus()
+  await p.keyboard.press('Enter')
   await p.waitForSelector('.toast:has-text("Approved")')
+  await p.waitForFunction(() => document.activeElement?.matches('.row-link, .tab'))
   await until(() => labels(100).join() === 'P1,job', 'approval to land')
   await until(
     () =>
@@ -517,7 +519,7 @@ async function main() {
   )
   await p.goto(BASE + '#/jobs')
   await p.waitForSelector('.row:has-text("Record a demo video")')
-  step('approved from the Others list; it moved to Jobs with an /approve record')
+  step('approved from the Others list (keyboard focus moved to the next row); it moved to Jobs with an /approve record')
 
   await p.click('.page-head >> text=New job')
   await p.fill('.modal input.input-lg', 'Prepare camera-ready figures')
@@ -559,6 +561,29 @@ async function main() {
   assert.deepEqual(await inert('.shell', '.drawer-layer'), [true, false], 'the drawer takes input again')
   assert.ok(await p.evaluate(() => !!document.activeElement?.closest('.drawer')), 'focus is back in the drawer')
   step('Escape closes the topmost dialog only; the one under it is inert until then')
+
+  // Back to a job's address while a form is open: the job opens under the form, where it is drawn.
+  await p.goto(BASE + '#/jobs')
+  await p.click('.row:has-text("Set up the public leaderboard page") .row-link')
+  await p.waitForSelector('.drawer')
+  await p.keyboard.press('Escape')
+  await p.waitForSelector('.drawer', { state: 'detached' })
+  await p.click('.page-head >> text=New job')
+  await p.waitForSelector('.modal')
+  await p.keyboard.type('Book the studio')
+  await p.goBack()
+  await p.waitForSelector('.drawer')
+  assert.deepEqual(await inert('.shell', '.drawer-layer', '.modal-layer'), [true, true, false], 'the form stays usable')
+  await p.keyboard.type(' for Friday')
+  assert.equal(await p.inputValue('.modal input.input-lg'), 'Book the studio for Friday')
+  await p.keyboard.press('Escape')
+  await p.waitForSelector('.modal', { state: 'detached' })
+  assert.ok(await p.evaluate(() => !!document.activeElement?.closest('.drawer')), 'then the job has focus')
+  await p.keyboard.press('Escape')
+  await p.waitForSelector('.drawer', { state: 'detached' })
+  step('Back to a job while a form is open puts the job under the form, not over it')
+  await p.goto(BASE + '#/jobs/101')
+  await p.waitForSelector('.drawer h2:has-text("Prepare camera-ready figures")')
   await p.click('.prio-opt:has-text("P2")')
   await until(() => labels(101).join() === 'P2,job', 'priority change')
   const dueRecords = () => S.comments.filter((c) => c.issue_number === 101 && /^\/due\b/.test(c.body)).length
@@ -587,6 +612,16 @@ async function main() {
   await sleep(500)
   assert.equal(parseBody(issue(101).body).due, '2026-11-25', 'and the saved date stays')
   assert.equal(dueRecords(), 1)
+  await p.click('.drawer .link-btn:has-text("Edit")')
+  await p.waitForSelector('.modal')
+  await p.locator('.modal input[type=date]').focus()
+  await p.keyboard.press('Backspace')
+  await p.keyboard.press('Control+Enter')
+  await sleep(800)
+  assert.equal(await p.locator('.modal').count(), 1, 'Ctrl+Enter with a half-typed date keeps the form open')
+  assert.equal(parseBody(issue(101).body).due, '2026-11-25')
+  await p.keyboard.press('Escape')
+  await p.waitForSelector('.modal', { state: 'detached' })
   step('changed priority and due date from the drawer (saved once per date, never from half-typed input)')
 
   await p.goto(BASE + '#/others/8')
@@ -605,8 +640,13 @@ async function main() {
   await p.screenshot({ path: OUT + '/12-admin-others.png' })
 
   await p.goto(BASE + '#/jobs/4')
-  await p.click('.drawer-foot button:has-text("Pick up")')
+  await p.locator('.drawer-foot button:has-text("Pick up")').focus()
+  await p.keyboard.press('Enter')
   await p.waitForSelector('.drawer-foot button:has-text("Drop")')
+  assert.ok(
+    await p.evaluate(() => document.activeElement?.classList.contains('drawer')),
+    'keyboard focus stays in the drawer (on the drawer, not on Mark done)',
+  )
   await p.click('.drawer-foot button:has-text("Drop")')
   await p.waitForSelector('.drawer-foot button:has-text("Pick up")')
   await Promise.all(S.botRuns)
@@ -638,6 +678,21 @@ async function main() {
   )
   assert.equal(await a11y.locator('.drawer .comment img[onerror]').count(), 0)
   assert.equal(await a11y.locator('.drawer .comment a[href^="javascript:"]').count(), 0)
+  assert.equal(await a11y.locator('.drawer .comment svg, .drawer .comment math').count(), 0, 'no SVG or MathML')
+  assert.ok(
+    await a11y.evaluate(() => {
+      const title = document.querySelector('.drawer-title').getBoundingClientRect()
+      return document.elementFromPoint(title.x + 10, title.y + title.height / 2)?.closest('.drawer-title') !== null
+    }),
+    'nothing from a comment covers the job',
+  )
+  assert.deepEqual(
+    await a11y
+      .locator('.drawer .comment [href]')
+      .evaluateAll((links) => links.map((a) => [a.getAttribute('target'), a.getAttribute('rel')])),
+    [['_blank', 'noopener noreferrer']],
+    'links in comments open in a new tab',
+  )
   assert.deepEqual(
     await a11y
       .locator('.drawer .comment input[type=checkbox]')
@@ -683,6 +738,27 @@ async function main() {
   )
   assert.ok(cspViolations.length > 0, 'the tracking pixel from the comment was blocked')
   step("forms take focus and close on Escape; the CSP blocked only the comment's tracking pixel")
+
+  // ---------------- Links ----------------
+  const nav = await newPage()
+  await nav.goto(BASE + '#/others')
+  await nav.waitForSelector('.row-title')
+  await nav.goto(BASE + '#/jobs/999')
+  await nav.waitForSelector('.toast:has-text("Couldn\'t find that job")')
+  await nav.waitForURL(/#\/jobs$/)
+  await nav.goBack()
+  await nav.waitForURL(/#\/others$/)
+  await nav.goto(BASE + '#/jobs/1')
+  await nav.waitForSelector('.drawer .event')
+  assert.deepEqual(
+    await nav.locator('.drawer .event.failed .event-text').allInnerTexts(),
+    [
+      'sam took @alice off this (didn’t go through)',
+      'sam declined this: “Duplicate of https://github.com/octo/board/issues/1#issuecomment-1234567890123456789012345678901234567890” (didn’t go through)',
+    ].map((t) => t.replace('’', "'")),
+    "only the bot's 😕 marks a command as not gone through",
+  )
+  step("a link to a missing job says so and Back still leaves it; only the bot's 😕 marks a failed command")
 
   // ---------------- Search, shortcuts, paging ----------------
   console.log('Search, shortcuts and long lists')
@@ -749,8 +825,21 @@ async function main() {
     await ax.keyboard.press('Escape')
     await ax.click('header >> text=Sign in')
     await audit('sign-in')
+    await ax.fill('.modal input[type=password]', 'admin-token')
+    await ax.click('.modal button:has-text("Connect")')
+    await ax.waitForSelector('.badge-admin')
+    await ax.goto(BASE + '#/jobs/1')
+    await ax.waitForSelector('.drawer .prio-opt')
+    await audit('a job, as an admin')
+    await ax.keyboard.press('Escape')
+    await ax.goto(BASE + '#/others')
+    await ax.waitForSelector('.row .row-action')
+    await audit('Others, as an admin')
+    await ax.goto(BASE + '#/jobs/999')
+    await ax.waitForSelector('.toast-error')
+    await audit('an error message')
   }
-  step('no axe violations on the list, a job, the form or sign-in, in light and dark mode')
+  step('no axe violations on the list, a job, the form, sign-in, admin views and errors, in light and dark mode')
 
   // ---------------- Resilience ----------------
   console.log('Resilience')
@@ -891,7 +980,22 @@ async function main() {
   await sleep(400)
   await phone.screenshot({ path: OUT + '/33-phone-form.png' })
   assert.equal(await overflow(), 0, 'the form fits')
-  step('phone screens: list, job, sign-in and form fit without sideways scrolling')
+  await phone.keyboard.press('Escape')
+  await phone.goto(BASE + '#/jobs/1')
+  await phone.waitForSelector('.drawer .event.failed')
+  assert.equal(await overflow(), 0, 'a long activity line wraps')
+  const phoneAdmin = await newPage({ viewport: { width: 375, height: 740 } })
+  await phoneAdmin.goto(BASE + '#/others')
+  await phoneAdmin.click('header button:has-text("Sign in")')
+  await phoneAdmin.fill('.modal input[type=password]', 'admin-token')
+  await phoneAdmin.click('.modal button:has-text("Connect")')
+  await phoneAdmin.waitForSelector('.row .row-action')
+  assert.equal(
+    await phoneAdmin.getByRole('button', { name: 'Approve' }).count(),
+    await phoneAdmin.locator('.row .row-action').count(),
+    'icon-only Approve buttons still have a name',
+  )
+  step('phone screens: list, job, sign-in and form fit without sideways scrolling; icon buttons keep names')
 
   await Promise.all(S.botRuns)
   const confused = S.comments.filter((c) => c.reactions?.confused && c.id > 5000)

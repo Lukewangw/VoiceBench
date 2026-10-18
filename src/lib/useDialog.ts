@@ -1,8 +1,14 @@
 import { useLayoutEffect, useRef, type RefObject } from 'react'
 
-// Dialogs that are open right now, innermost last. Only the top one answers Escape and Tab, and
-// everything else (the page and any dialog underneath) is inert until it closes.
-const stack: HTMLElement[] = []
+// Dialogs that are open right now, bottom to top. Only the top one answers Escape and Tab, and
+// everything else (the page and any dialog under it) is inert until it closes.
+interface Layer {
+  dialog: HTMLElement
+  level: number
+  /** Where focus goes when this dialog closes. */
+  returnTo: HTMLElement | null
+}
+const stack: Layer[] = []
 
 const FOCUSABLE = [
   'a[href]',
@@ -21,18 +27,29 @@ const layerOf = (dialog: HTMLElement) => dialog.parentElement ?? dialog
 
 function updateInert() {
   document.querySelector('.shell')?.toggleAttribute('inert', stack.length > 0)
-  stack.forEach((dialog, i) => layerOf(dialog).toggleAttribute('inert', i < stack.length - 1))
+  stack.forEach((layer, i) => layerOf(layer.dialog).toggleAttribute('inert', i < stack.length - 1))
+}
+
+const canFocus = (el: HTMLElement | null): el is HTMLElement => !!el?.isConnected && !el.closest('[inert]')
+
+export interface DialogOptions {
+  /** What gets focus when the dialog opens; otherwise the dialog itself, which needs tabIndex={-1}. */
+  initialFocus?: RefObject<HTMLElement | null>
+  /**
+   * Higher levels are drawn on top: the job drawer is 0, forms and sign-in are 1. A drawer that
+   * opens while a form is up (Back to a job's address) goes under the form, where it is drawn.
+   */
+  level?: number
 }
 
 /**
- * Makes `ref` behave like a modal dialog: focus moves in (to `initialFocus`, or the dialog itself,
- * which needs tabIndex={-1}), Tab and Shift+Tab stay inside, Escape closes it, everything behind
- * it is inert, and focus goes back to where it was once it closes.
+ * Makes `ref` behave like a modal dialog: focus moves in, Tab and Shift+Tab stay inside, Escape
+ * closes it, everything behind it is inert, and focus goes back to where it was once it closes.
  */
 export function useDialog(
   ref: RefObject<HTMLElement | null>,
   onClose: () => void,
-  initialFocus?: RefObject<HTMLElement | null>,
+  { initialFocus, level = 1 }: DialogOptions = {},
 ) {
   const close = useRef(onClose)
   close.current = onClose
@@ -42,13 +59,26 @@ export function useDialog(
   useLayoutEffect(() => {
     const dialog = ref.current
     if (!dialog) return
-    const returnTo = document.activeElement instanceof HTMLElement ? document.activeElement : null
-    stack.push(dialog)
+    const layer: Layer = {
+      dialog,
+      level,
+      returnTo: document.activeElement instanceof HTMLElement ? document.activeElement : null,
+    }
+    let at = stack.length
+    while (at > 0 && stack[at - 1].level > level) at--
+    if (at < stack.length) {
+      // Opening under another dialog: as if this one had been open first, so the one above now
+      // returns here, and this one returns to where that one would have.
+      layer.returnTo = stack[at].returnTo
+      stack[at].returnTo = dialog
+    }
+    stack.splice(at, 0, layer)
     updateInert()
-    ;(initialFocus?.current ?? dialog).focus()
+    if (stack[stack.length - 1] === layer) (initialFocus?.current ?? dialog).focus()
 
     const onKey = (e: KeyboardEvent) => {
-      if (stack[stack.length - 1] !== dialog) return
+      // Handled already: closing the top dialog makes this one the top before its listener runs.
+      if (e.defaultPrevented || stack[stack.length - 1] !== layer) return
       if (e.key === 'Escape') {
         e.preventDefault()
         close.current()
@@ -70,9 +100,17 @@ export function useDialog(
     document.addEventListener('keydown', onKey)
     return () => {
       document.removeEventListener('keydown', onKey)
-      stack.splice(stack.indexOf(dialog), 1)
+      const i = stack.indexOf(layer)
+      const wasTop = i === stack.length - 1
+      stack.splice(i, 1)
+      // Dialogs above this one that would have returned into it return where it would have.
+      for (const above of stack.slice(i)) {
+        if (above.returnTo && dialog.contains(above.returnTo)) above.returnTo = layer.returnTo
+      }
       updateInert()
-      if (returnTo?.isConnected) returnTo.focus()
+      if (!wasTop) return
+      if (canFocus(layer.returnTo)) layer.returnTo.focus()
+      else stack[stack.length - 1]?.dialog.focus()
     }
-  }, [ref, initialFocus])
+  }, [ref, initialFocus, level])
 }
