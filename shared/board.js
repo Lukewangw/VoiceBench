@@ -407,7 +407,10 @@ export function failureReply(actor, problems, commentId) {
 
 /** The commands (as quoted) and reasons in such an answer. */
 export function failureLines(text) {
-  return [...String(text ?? '').matchAll(/^- `([^`\n]*)`: (.+)$/gm)].map((m) => ({ command: m[1], reason: m[2].trim() }))
+  return [...String(text ?? '').matchAll(/^- `([^`\n]*)`: (.+)$/gm)].map((m) => ({
+    command: m[1],
+    reason: m[2].trim(),
+  }))
 }
 
 /** The reasons given in such an answer. */
