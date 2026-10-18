@@ -64,7 +64,8 @@ export function SignIn({ onSignIn, onClose }: Props) {
             <div>
               <div className="step-title">Create a token on GitHub</div>
               <div className="step-text">
-                The <code>public_repo</code> scope is already ticked. Pick an expiry, then click <em>Generate token</em>.
+                The <code>public_repo</code> scope is already ticked. Pick an expiry, then click <em>Generate token</em>
+                .
               </div>
               <div className="step-links">
                 <a
@@ -113,7 +114,11 @@ export function SignIn({ onSignIn, onClose }: Props) {
           <Icon name="lock" size={14} />
           <span>
             The token stays in this browser and is only sent to api.github.com. Admins are the people with write access
-            to <a href={REPO_URL} target="_blank" rel="noreferrer">{REPO}</a>.
+            to{' '}
+            <a href={REPO_URL} target="_blank" rel="noreferrer">
+              {REPO}
+            </a>
+            .
           </span>
         </div>
 

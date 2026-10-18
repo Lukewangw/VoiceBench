@@ -65,7 +65,10 @@ export function App() {
 
   useEffect(() => {
     if (route.job && !board.loading && !selected) {
-      toast(`Couldn't find that job${route.job.startsWith('p') ? ' (private jobs need an admin sign-in)' : ''}.`, 'error')
+      toast(
+        `Couldn't find that job${route.job.startsWith('p') ? ' (private jobs need an admin sign-in)' : ''}.`,
+        'error',
+      )
       go(route.tab)
     }
   }, [route.job, route.tab, board.loading, selected, go])

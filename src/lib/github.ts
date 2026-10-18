@@ -68,10 +68,14 @@ async function toError(res: Response): Promise<GitHubError> {
   }
   if (res.status === 401) return new GitHubError('GitHub did not accept the token. It may have expired.', 401)
   if (res.status === 403) {
-    return new GitHubError(message ? `GitHub refused: ${message}` : 'GitHub refused. Is the public_repo scope on your token?', 403)
+    return new GitHubError(
+      message ? `GitHub refused: ${message}` : 'GitHub refused. Is the public_repo scope on your token?',
+      403,
+    )
   }
   if (res.status === 404) return new GitHubError("GitHub couldn't find that, or your token can't reach it.", 404)
-  if (res.status === 422) return new GitHubError(message ? `GitHub rejected it: ${message}` : 'GitHub rejected the request.', 422)
+  if (res.status === 422)
+    return new GitHubError(message ? `GitHub rejected it: ${message}` : 'GitHub rejected the request.', 422)
   return new GitHubError(message || `GitHub error ${res.status}`, res.status)
 }
 

@@ -23,15 +23,15 @@ api.github.com.
 
 ### Who can do what
 
-|                                     | Everyone with a GitHub account | Admins |
-| ----------------------------------- | :----------------------------: | :----: |
-| See the board                       |    ✓ (no sign-in needed)       |   ✓    |
-| Propose a job in Others             |               ✓                |   ✓    |
-| Pick up, drop, mark done, comment   |               ✓                |   ✓    |
-| Edit priority and due date          |    their own proposals         |   ✓    |
-| Add jobs straight to the board      |                                |   ✓    |
-| Approve or decline proposals        |                                |   ✓    |
-| See and add private jobs            |                                | ✓ (see below) |
+|                                   | Everyone with a GitHub account |    Admins     |
+| --------------------------------- | :----------------------------: | :-----------: |
+| See the board                     |     ✓ (no sign-in needed)      |       ✓       |
+| Propose a job in Others           |               ✓                |       ✓       |
+| Pick up, drop, mark done, comment |               ✓                |       ✓       |
+| Edit priority and due date        |      their own proposals       |       ✓       |
+| Add jobs straight to the board    |                                |       ✓       |
+| Approve or decline proposals      |                                |       ✓       |
+| See and add private jobs          |                                | ✓ (see below) |
 
 **Admins are the people with write access to this repository.** To make someone an admin, add them under
 Settings → Collaborators. Everyone else doesn't need to be added at all.
@@ -63,17 +63,17 @@ Every job is an issue in this repository, so everything also works from GitHub:
 - Everything else: comment a command on the issue. The board bot applies it within a minute and reacts with 👍
   (or 😕 plus a reply saying why it couldn't).
 
-| Comment                          | What it does                                       | Who            |
-| -------------------------------- | -------------------------------------------------- | -------------- |
-| `/take`                          | Put yourself on the job (also `/pickup`, `/claim`) | anyone         |
-| `/drop`                          | Take yourself off                                  | anyone         |
-| `/done`                          | Mark the job done                                  | people on it, admins |
-| `/reopen`                        | Reopen a finished job                              | people on it, admins |
-| `/approve`                       | Approve a proposal into Jobs                       | admins         |
-| `/reject <reason>`               | Decline a proposal or cancel a job                 | admins         |
-| `/priority P1` (or `/p1`)        | Set the priority, P0 to P3                         | admins, proposal author |
-| `/due 2026-10-31`, `/due none`   | Set or clear the due date                          | admins, proposal author |
-| `/take @name`, `/drop @name`     | Assign or unassign someone else                    | admins         |
+| Comment                        | What it does                                       | Who                     |
+| ------------------------------ | -------------------------------------------------- | ----------------------- |
+| `/take`                        | Put yourself on the job (also `/pickup`, `/claim`) | anyone                  |
+| `/drop`                        | Take yourself off                                  | anyone                  |
+| `/done`                        | Mark the job done                                  | people on it, admins    |
+| `/reopen`                      | Reopen a finished job                              | people on it, admins    |
+| `/approve`                     | Approve a proposal into Jobs                       | admins                  |
+| `/reject <reason>`             | Decline a proposal or cancel a job                 | admins                  |
+| `/priority P1` (or `/p1`)      | Set the priority, P0 to P3                         | admins, proposal author |
+| `/due 2026-10-31`, `/due none` | Set or clear the due date                          | admins, proposal author |
+| `/take @name`, `/drop @name`   | Assign or unassign someone else                    | admins                  |
 
 ## How it's built
 
@@ -99,8 +99,31 @@ Every job is an issue in this repository, so everything also works from GitHub:
 
 ```sh
 npm install
-npm run dev        # local site, reading live issues from GitHub
-npm test           # rules and bot tests
+npm run dev           # local site, reading live issues from GitHub
+npm test              # unit tests: board rules, the bot, the snapshot
+npm run e2e           # end-to-end: the built site in Chromium against a fake GitHub API that runs the real bot
 npm run typecheck
+npm run format        # Prettier
 npm run build
 ```
+
+`npm run e2e` needs a Playwright Chromium (`npx playwright install chromium`). It covers members' and admins'
+flows, private jobs, search and keyboard use, and hostile comment HTML.
+
+Every push and pull request runs formatting, type, unit and end-to-end checks; the site is only published when they
+pass. Dependabot opens one grouped update a month per ecosystem, checked the same way.
+
+## Security and privacy
+
+- **Tokens** stay in the browser that pasted them (localStorage for this site) and are only sent to
+  api.github.com. Anything on the same `<user>.github.io` origin could read them, so don't host untrusted pages
+  there. Signing out removes the token.
+- **Content Security Policy**: the published page runs only its own scripts, connects only to api.github.com and
+  shows images only from GitHub.
+- **Issue text is untrusted**: it is rendered from Markdown and sanitized; it can't run scripts, add form fields
+  (other than read-only task-list boxes), styles, classes or ids.
+- **Private jobs** live only in the private repository. The published site and its `data.json` contain public
+  issues only; private jobs are fetched by an admin's browser with the admin's own token, and only when that
+  repository reports itself as private.
+- **The bot** runs with the workflow's `GITHUB_TOKEN` (issues: write), checks write access before admin-only
+  commands, and never executes anything from issue text.

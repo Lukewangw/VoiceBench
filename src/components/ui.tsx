@@ -102,7 +102,14 @@ export function Logo({ size = 30 }: { size?: number }) {
         </linearGradient>
       </defs>
       <rect width="32" height="32" rx="9" fill="url(#logo-g)" />
-      <path d="M9.5 16.5l4.2 4.2 8.8-9.4" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+      <path
+        d="M9.5 16.5l4.2 4.2 8.8-9.4"
+        fill="none"
+        stroke="#fff"
+        strokeWidth="3"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
     </svg>
   )
 }
@@ -128,7 +135,17 @@ export function Avatar({ person, size = 24, className = '' }: { person: Person; 
   )
 }
 
-export function AvatarStack({ people, size = 24, max = 3, me }: { people: Person[]; size?: number; max?: number; me?: string }) {
+export function AvatarStack({
+  people,
+  size = 24,
+  max = 3,
+  me,
+}: {
+  people: Person[]
+  size?: number
+  max?: number
+  me?: string
+}) {
   if (!people.length) {
     return <span className="avatar-empty" style={{ width: size, height: size }} title="Nobody yet. Pick it up!" />
   }

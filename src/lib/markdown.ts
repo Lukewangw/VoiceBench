@@ -6,7 +6,8 @@ marked.use({ gfm: true, breaks: true })
 DOMPurify.addHook('uponSanitizeElement', (node, data) => {
   // Task-list boxes are the only form control GitHub text gets: a comment must never be able to
   // draw something like a token field on a page that asks for tokens.
-  if (data.tagName === 'input' && (node as Element).getAttribute('type') !== 'checkbox') node.parentNode?.removeChild(node)
+  if (data.tagName === 'input' && (node as Element).getAttribute('type') !== 'checkbox')
+    node.parentNode?.removeChild(node)
 })
 
 DOMPurify.addHook('afterSanitizeAttributes', (node) => {

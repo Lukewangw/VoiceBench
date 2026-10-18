@@ -30,6 +30,6 @@ body:
     attributes:
       label: Due date
       description: Optional. Format YYYY-MM-DD.
-      placeholder: "2026-10-31"
+      placeholder: '2026-10-31'
     validations:
       required: false

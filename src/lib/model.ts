@@ -116,7 +116,8 @@ export function toNote(raw: RawComment): Note {
 }
 
 export const sameLogin = (a: string, b: string) => a.toLowerCase() === b.toLowerCase()
-export const isOn = (job: Job, login: string | undefined) => !!login && job.assignees.some((a) => sameLogin(a.login, login))
+export const isOn = (job: Job, login: string | undefined) =>
+  !!login && job.assignees.some((a) => sameLogin(a.login, login))
 
 const RANK: Record<PriorityKey, number> = { P0: 0, P1: 1, P2: 2, P3: 3 }
 

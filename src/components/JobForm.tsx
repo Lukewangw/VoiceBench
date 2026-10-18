@@ -42,7 +42,13 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
     setSaving(true)
     setError(null)
     try {
-      await onSubmit({ title: title.trim(), description: description.trim(), priority, due: due || null, private: isPrivate })
+      await onSubmit({
+        title: title.trim(),
+        description: description.trim(),
+        priority,
+        due: due || null,
+        private: isPrivate,
+      })
     } catch (e) {
       setError(errorText(e))
       setSaving(false)
@@ -51,7 +57,12 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
 
   // Without signing in, the same form is filled in on GitHub instead.
   const openOnGitHub = () => {
-    const q = new URLSearchParams({ template: 'job.yml', title: title.trim(), description: description.trim(), priority: priorityLabel(priority) })
+    const q = new URLSearchParams({
+      template: 'job.yml',
+      title: title.trim(),
+      description: description.trim(),
+      priority: priorityLabel(priority),
+    })
     if (due) q.set('due', due)
     window.open(`${REPO_URL}/issues/new?${q}`, '_blank', 'noopener')
     onClose()
@@ -134,10 +145,7 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
             </div>
           </div>
           <label className="field field-due">
-            <span className="field-label">
-              Due date{' '}
-              {due && <span className="muted">· {dueRelative(due)}</span>}
-            </span>
+            <span className="field-label">Due date {due && <span className="muted">· {dueRelative(due)}</span>}</span>
             <span className="due-input">
               <input
                 type="date"
@@ -160,7 +168,13 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
           <div className="field">
             <span className="field-label">Who can see it</span>
             <div className="vis" role="radiogroup" aria-label="Who can see it">
-              <button type="button" role="radio" aria-checked={!isPrivate} className={`vis-opt${!isPrivate ? ' selected' : ''}`} onClick={() => setIsPrivate(false)}>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={!isPrivate}
+                className={`vis-opt${!isPrivate ? ' selected' : ''}`}
+                onClick={() => setIsPrivate(false)}
+              >
                 <Icon name="users" />
                 <span>
                   <b>Everyone</b>

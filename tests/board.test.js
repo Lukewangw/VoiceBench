@@ -94,7 +94,12 @@ test('formatBody and updateBody round-trip', () => {
   assert.equal(parseBody(noPriority).due, '2026-11-01')
 
   const moved = updateBody(noPriority, { due: '2026-12-24' })
-  assert.deepEqual(parseBody(moved), { description: 'Write docs', priority: null, due: '2026-12-24', hasPriority: false })
+  assert.deepEqual(parseBody(moved), {
+    description: 'Write docs',
+    priority: null,
+    due: '2026-12-24',
+    hasPriority: false,
+  })
 
   const cleared = updateBody(moved, { due: null })
   assert.equal(parseBody(cleared).due, null)

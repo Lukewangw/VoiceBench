@@ -18,7 +18,11 @@ const FOCUSABLE = [
  * which needs tabIndex={-1}), Tab and Shift+Tab stay inside, Escape closes it, and focus goes back
  * to where it was once it closes.
  */
-export function useDialog(ref: RefObject<HTMLElement | null>, onClose: () => void, initialFocus?: RefObject<HTMLElement | null>) {
+export function useDialog(
+  ref: RefObject<HTMLElement | null>,
+  onClose: () => void,
+  initialFocus?: RefObject<HTMLElement | null>,
+) {
   const close = useRef(onClose)
   close.current = onClose
 

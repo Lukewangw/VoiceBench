@@ -113,7 +113,14 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   return (
     <div className="drawer-layer">
       <div className="drawer-backdrop" onClick={onClose} />
-      <aside className="drawer" role="dialog" aria-modal="true" aria-labelledby="drawer-title" tabIndex={-1} ref={panelRef}>
+      <aside
+        className="drawer"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="drawer-title"
+        tabIndex={-1}
+        ref={panelRef}
+      >
         <div className="drawer-head">
           <span className="crumb">
             {tab === 'others' ? 'Others' : tab === 'done' ? 'Done' : 'Jobs'} <span className="crumb-sep">/</span>{' '}
@@ -144,7 +151,9 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
             <span className={`status-chip tone-${status.tone}`}>
               <Icon name={status.icon} size={14} />
               {job.status === 'closed' && job.labels.includes('job') ? 'Cancelled' : status.label}
-              {job.status === 'done' && job.closedAt && <span className="status-sub">· {shortDate(new Date(job.closedAt))}</span>}
+              {job.status === 'done' && job.closedAt && (
+                <span className="status-sub">· {shortDate(new Date(job.closedAt))}</span>
+              )}
             </span>
             {job.private && (
               <span className="status-chip tone-private" title="Kept in the private repository; only admins can see it">
@@ -189,7 +198,12 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
               <Icon name="calendar" size={14} /> Due
             </dt>
             <dd>
-              <DueField job={job} editable={editable && job.status !== 'closed'} disabled={!!busy} onChange={(due) => run('due', () => actions.setDue(job, due))} />
+              <DueField
+                job={job}
+                editable={editable && job.status !== 'closed'}
+                disabled={!!busy}
+                onChange={(due) => run('due', () => actions.setDue(job, due))}
+              />
             </dd>
 
             <dt>
@@ -206,7 +220,9 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
                   ))}
                 </span>
               ) : (
-                <span className="muted">{job.status === 'proposal' ? 'Can be picked up once approved' : 'Nobody yet'}</span>
+                <span className="muted">
+                  {job.status === 'proposal' ? 'Can be picked up once approved' : 'Nobody yet'}
+                </span>
               )}
             </dd>
 
@@ -264,7 +280,17 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   )
 }
 
-function DueField({ job, editable, disabled, onChange }: { job: Job; editable: boolean; disabled: boolean; onChange(due: string | null): void }) {
+function DueField({
+  job,
+  editable,
+  disabled,
+  onChange,
+}: {
+  job: Job
+  editable: boolean
+  disabled: boolean
+  onChange(due: string | null): void
+}) {
   const tone = job.due && job.status !== 'done' ? dueTone(job.due) : 'later'
   const text = job.due ? (
     <span className={`due-text due-${tone}`}>
@@ -295,7 +321,17 @@ function DueField({ job, editable, disabled, onChange }: { job: Job; editable: b
   )
 }
 
-function DeclineForm({ verb, busy, onCancel, onDecline }: { verb: string; busy: boolean; onCancel(): void; onDecline(reason: string): void }) {
+function DeclineForm({
+  verb,
+  busy,
+  onCancel,
+  onDecline,
+}: {
+  verb: string
+  busy: boolean
+  onCancel(): void
+  onDecline(reason: string): void
+}) {
   const [reason, setReason] = useState('')
   return (
     <div className="decline">
@@ -392,7 +428,17 @@ function Activity({ job, notes }: { job: Job; notes: Note[] }) {
   )
 }
 
-function Composer({ job, viewer, actions, onSignIn }: { job: Job; viewer: Viewer | null; actions: Board['actions']; onSignIn(): void }) {
+function Composer({
+  job,
+  viewer,
+  actions,
+  onSignIn,
+}: {
+  job: Job
+  viewer: Viewer | null
+  actions: Board['actions']
+  onSignIn(): void
+}) {
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
   useEffect(() => setText(''), [job.key])

@@ -1,0 +1,5 @@
+dist/
+e2e/.dist/
+e2e/.output/
+package-lock.json
+public/

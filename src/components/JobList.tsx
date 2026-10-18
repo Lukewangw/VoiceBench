@@ -15,9 +15,16 @@ export function Tabs({ tab, counts }: { tab: Tab; counts: Record<Tab, number> })
   return (
     <nav className="tabs" aria-label="Board sections">
       {TABS.map((t) => (
-        <a key={t.key} className={`tab${tab === t.key ? ' active' : ''}`} href={`#/${t.key}`} aria-current={tab === t.key ? 'page' : undefined}>
+        <a
+          key={t.key}
+          className={`tab${tab === t.key ? ' active' : ''}`}
+          href={`#/${t.key}`}
+          aria-current={tab === t.key ? 'page' : undefined}
+        >
           {t.label}
-          <span className={`tab-count${t.key === 'others' && counts.others > 0 ? ' attention' : ''}`}>{counts[t.key]}</span>
+          <span className={`tab-count${t.key === 'others' && counts.others > 0 ? ' attention' : ''}`}>
+            {counts[t.key]}
+          </span>
         </a>
       ))}
     </nav>
@@ -40,7 +47,18 @@ interface ListProps {
   onApprove(job: Job): Promise<void>
 }
 
-export function JobList({ tab, jobs, othersCount, query, onClearQuery, loading, viewer, pending, onNew, onApprove }: ListProps) {
+export function JobList({
+  tab,
+  jobs,
+  othersCount,
+  query,
+  onClearQuery,
+  loading,
+  viewer,
+  pending,
+  onNew,
+  onApprove,
+}: ListProps) {
   const [limit, setLimit] = useState(PAGE)
   useEffect(() => setLimit(PAGE), [tab, query])
   const hidden = jobs.length - limit
@@ -57,7 +75,9 @@ export function JobList({ tab, jobs, othersCount, query, onClearQuery, loading, 
               <Icon name="search" size={22} />
             </span>
             <div className="empty-title">Nothing here matches “{query}”</div>
-            <div className="empty-text">Try another word, a name, or a number like #12. Other tabs may have matches.</div>
+            <div className="empty-text">
+              Try another word, a name, or a number like #12. Other tabs may have matches.
+            </div>
             <button className="btn btn-outline" onClick={onClearQuery}>
               <Icon name="x" size={15} /> Clear search
             </button>
@@ -93,7 +113,19 @@ export function JobList({ tab, jobs, othersCount, query, onClearQuery, loading, 
   )
 }
 
-function Row({ tab, job, viewer, pending, onApprove }: { tab: Tab; job: Job; viewer: Viewer | null; pending?: string; onApprove(job: Job): Promise<void> }) {
+function Row({
+  tab,
+  job,
+  viewer,
+  pending,
+  onApprove,
+}: {
+  tab: Tab
+  job: Job
+  viewer: Viewer | null
+  pending?: string
+  onApprove(job: Job): Promise<void>
+}) {
   const [busy, setBusy] = useState(false)
   const done = tab === 'done'
   const mine = tab === 'jobs' && isOn(job, viewer?.login)
@@ -185,7 +217,9 @@ function Empty({ tab, viewer, onNew }: { tab: Tab; viewer: Viewer | null; onNew(
   const copy = {
     jobs: {
       title: 'Nothing on the board yet',
-      text: viewer?.isAdmin ? 'Add the first job and the team can start picking things up.' : 'When admins add jobs, they show up here.',
+      text: viewer?.isAdmin
+        ? 'Add the first job and the team can start picking things up.'
+        : 'When admins add jobs, they show up here.',
     },
     others: { title: 'No proposals right now', text: 'Got an idea for something the team should do? Propose it.' },
     done: { title: 'Nothing finished yet', text: 'Jobs marked done show up here.' },

@@ -34,7 +34,11 @@ export function Header({ viewer, syncedAt, live, refreshing, onRefresh, onSignIn
           </span>
         </a>
         <div className="topbar-right">
-          <button className="sync" onClick={onRefresh} title={live ? 'Reading GitHub directly. Refresh now' : 'Refresh'}>
+          <button
+            className="sync"
+            onClick={onRefresh}
+            title={live ? 'Reading GitHub directly. Refresh now' : 'Refresh'}
+          >
             <Icon name="refresh" className={refreshing ? 'spin' : undefined} />
             <span className="sync-text">{status}</span>
           </button>

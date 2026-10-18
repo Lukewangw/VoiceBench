@@ -150,7 +150,8 @@ export function createBot({ github, core, owner, repo, number }) {
     await addLabels(add)
     await removeLabels(issue, remove)
     // The label is the source of truth from now on, so drop the form answer to avoid two versions.
-    if (fields.hasPriority) await github.rest.issues.update({ ...ref, body: updateBody(issue.body, { priority: null }) })
+    if (fields.hasPriority)
+      await github.rest.issues.update({ ...ref, body: updateBody(issue.body, { priority: null }) })
     core.info(`#${number}: filed as ${asJob ? 'job' : 'proposal'}; added [${add}] removed [${remove}]`)
   }
 
@@ -164,7 +165,10 @@ export function createBot({ github, core, owner, repo, number }) {
   async function keepOnePriority(added) {
     if (!added || !isPriorityLabel(added)) return
     const issue = await getIssue()
-    await removeLabels(issue, PRIORITIES.map((p) => p.key).filter((key) => !same(key, added)))
+    await removeLabels(
+      issue,
+      PRIORITIES.map((p) => p.key).filter((key) => !same(key, added)),
+    )
   }
 
   /** Works through every unanswered command comment on the issue, oldest first. */
@@ -224,7 +228,8 @@ export function createBot({ github, core, owner, repo, number }) {
       async done() {
         if (issue.state === 'closed') return null
         if (boardStatus(issue) === 'proposal') return 'a proposal cannot be marked done; it needs to be approved first.'
-        if (!admin && !isAssigned(issue, actor)) return 'only the people on this job (or an admin) can mark it done. Use `/take` first.'
+        if (!admin && !isAssigned(issue, actor))
+          return 'only the people on this job (or an admin) can mark it done. Use `/take` first.'
         issue = (await github.rest.issues.update({ ...ref, state: 'closed', state_reason: 'completed' })).data
         return null
       },
@@ -255,7 +260,10 @@ export function createBot({ github, core, owner, repo, number }) {
         if (!key) return 'use `/priority P0` (urgent) through `/priority P3` (low).'
         if (!canEditDetails()) return 'only admins can change the priority.'
         if (priorityFromLabels(issue.labels) !== key || labelNames(issue.labels).filter(isPriorityLabel).length > 1) {
-          await removeLabels(issue, PRIORITIES.map((p) => p.key).filter((k) => k !== key))
+          await removeLabels(
+            issue,
+            PRIORITIES.map((p) => p.key).filter((k) => k !== key),
+          )
           await addLabels([key])
           issue = await getIssue()
         }

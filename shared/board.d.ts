@@ -31,7 +31,11 @@ export function priorityFromLabels(labels: LabelLike[] | null | undefined): Prio
 export function isPriorityLabel(name: string): boolean
 export function parseDue(text: string | null | undefined, today?: Date): string | null
 export function parseBody(body: string | null | undefined): BodyFields
-export function formatBody(fields?: { description?: string; priority?: PriorityKey | null; due?: string | null }): string
+export function formatBody(fields?: {
+  description?: string
+  priority?: PriorityKey | null
+  due?: string | null
+}): string
 export function updateBody(
   body: string | null | undefined,
   patch: { description?: string; priority?: PriorityKey | null; due?: string | null },

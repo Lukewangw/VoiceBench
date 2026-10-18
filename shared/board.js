@@ -138,7 +138,9 @@ export function parseBody(body) {
   const parts = { pre: [] }
   let current = 'pre'
   let inFence = false
-  for (const line of String(body ?? '').replace(/\r\n?/g, '\n').split('\n')) {
+  for (const line of String(body ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
     const heading = inFence ? null : /^#{2,4}\s+(.+?)\s*#*\s*$/.exec(line)
     const key = heading && fieldFor(heading[1])
@@ -197,7 +199,9 @@ const COMMAND_LOOKUP = Object.fromEntries(
 export function parseCommands(text) {
   const found = []
   let inFence = false
-  for (const line of String(text ?? '').replace(/\r\n?/g, '\n').split('\n')) {
+  for (const line of String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')) {
     if (/^\s*(```|~~~)/.test(line)) {
       inFence = !inFence
       continue
@@ -233,7 +237,9 @@ export function isRecord(text) {
 export function stripCommands(text) {
   let inFence = false
   const kept = []
-  for (const line of String(text ?? '').replace(/\r\n?/g, '\n').split('\n')) {
+  for (const line of String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')) {
     const fence = /^\s*(```|~~~)/.test(line)
     if (fence) inFence = !inFence
     if (inFence || fence) kept.push(line)

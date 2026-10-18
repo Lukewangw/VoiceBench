@@ -1,5 +1,6 @@
 # Runs the board: applies the rules to every issue/comment event, then republishes the site with a
-# fresh snapshot of all issues. Bot actions use GITHUB_TOKEN, which never re-triggers this workflow.
+# fresh snapshot of all issues. Code changes are tested first and only published if the tests pass.
+# Bot actions use GITHUB_TOKEN, which never re-triggers this workflow.
 name: Board
 
 on:
@@ -9,6 +10,8 @@ on:
     types: [created, edited, deleted]
   push:
     branches: [main]
+  pull_request:
+    branches: [main]
   workflow_dispatch:
   # Safety net: republish every six hours in case an event was missed.
   schedule:
@@ -17,6 +20,36 @@ on:
 permissions: {}
 
 jobs:
+  test:
+    name: Test
+    if: github.event_name == 'push' || github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    # Pinned: Playwright's browser dependencies are known for this release.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm test
+      - run: npx playwright install --with-deps chromium
+      - name: End-to-end tests
+        run: npm run e2e
+      - name: Keep screenshots of a failed run
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: e2e-screenshots
+          path: e2e/.output
+          if-no-files-found: ignore
+
   triage:
     name: Apply board rules
     if: github.event_name == 'issues' || (github.event_name == 'issue_comment' && !github.event.issue.pull_request)
@@ -44,9 +77,10 @@ jobs:
 
   publish:
     name: Publish the board
-    needs: triage
-    # Also runs when triage was skipped (push, manual run) or failed, so the site stays current.
-    if: ${{ !cancelled() }}
+    needs: [test, triage]
+    # Not for pull requests, and never with failing tests. Runs when triage was skipped (pushes,
+    # schedule) or failed, so the site stays current.
+    if: ${{ !cancelled() && github.event_name != 'pull_request' && needs.test.result != 'failure' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -88,9 +122,6 @@ jobs:
           cache: npm
       - if: steps.pages.outputs.on == 'true'
         run: npm ci
-      - name: Test
-        if: steps.pages.outputs.on == 'true' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        run: npm test
       - name: Build
         if: steps.pages.outputs.on == 'true'
         run: npm run build

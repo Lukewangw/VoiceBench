@@ -95,7 +95,11 @@ const repo = { owner: 'o', repo: 'r' }
 const labels = (state) => state.issue.labels.map((l) => l.name).sort()
 
 async function opened({ github, state }) {
-  await triage({ github, core: quiet, context: { eventName: 'issues', repo, payload: { action: 'opened', issue: state.issue } } })
+  await triage({
+    github,
+    core: quiet,
+    context: { eventName: 'issues', repo, payload: { action: 'opened', issue: state.issue } },
+  })
 }
 
 let nextId = 1
@@ -151,7 +155,10 @@ test('a non-admin cannot sneak a job label in, and a missing priority defaults t
 
 test('an admin approving before the bot files the issue is kept', async () => {
   const events = [{ event: 'labeled', label: { name: 'job' }, actor: { login: ADMIN } }]
-  const gh = fakeGitHub({ number: 4, user: { login: MEMBER }, labels: [{ name: 'job' }, { name: 'P1' }], body: 'x' }, { events })
+  const gh = fakeGitHub(
+    { number: 4, user: { login: MEMBER }, labels: [{ name: 'job' }, { name: 'P1' }], body: 'x' },
+    { events },
+  )
   await opened(gh)
   assert.deepEqual(labels(gh.state), ['P1', 'job'])
 })
@@ -310,11 +317,19 @@ test('ignores bots and plain comments', async () => {
 })
 
 test('adding a priority label by hand removes the old one', async () => {
-  const gh = fakeGitHub({ number: 9, user: { login: ADMIN }, labels: [{ name: 'job' }, { name: 'P2' }, { name: 'P0' }] })
+  const gh = fakeGitHub({
+    number: 9,
+    user: { login: ADMIN },
+    labels: [{ name: 'job' }, { name: 'P2' }, { name: 'P0' }],
+  })
   await triage({
     github: gh.github,
     core: quiet,
-    context: { eventName: 'issues', repo, payload: { action: 'labeled', issue: gh.state.issue, label: { name: 'P0' } } },
+    context: {
+      eventName: 'issues',
+      repo,
+      payload: { action: 'labeled', issue: gh.state.issue, label: { name: 'P0' } },
+    },
   })
   assert.deepEqual(labels(gh.state), ['P0', 'job'])
 })

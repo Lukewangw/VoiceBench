@@ -13,7 +13,18 @@ import {
 } from '../shared/board.js'
 import { PRIVATE_REPO, REPO } from './config'
 import { createClient, GitHubError, type RawComment, type RawIssue, type RawUser, type Snapshot } from './lib/github'
-import { isOn, jobKey, sameLogin, toJob, toNote, toPerson, type Job, type Note, type Person, type Source } from './lib/model'
+import {
+  isOn,
+  jobKey,
+  sameLogin,
+  toJob,
+  toNote,
+  toPerson,
+  type Job,
+  type Note,
+  type Person,
+  type Source,
+} from './lib/model'
 import { storage } from './lib/storage'
 import { toast } from './toast'
 
@@ -168,15 +179,17 @@ async function fetchSnapshot(): Promise<Snapshot | null> {
 const WRITE_SETTLE_MS = 30_000
 
 const byKey = (jobs: Job[]) => Object.fromEntries(jobs.map((j) => [j.key, j])) as Record<string, Job>
-const without = <T,>(map: Record<string, T>, key: string) => {
+const without = <T>(map: Record<string, T>, key: string) => {
   const next = { ...map }
   delete next[key]
   return next
 }
 const issuesOf = (raw: RawIssue[], source: Source) => raw.filter((i) => !i.pull_request).map((i) => toJob(i, source))
 // Private job keys start with "p" (see jobKey).
-const privateOnly = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => k.startsWith('p')))
-const publicOnly = <T,>(m: Record<string, T>) => Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith('p')))
+const privateOnly = <T>(m: Record<string, T>) =>
+  Object.fromEntries(Object.entries(m).filter(([k]) => k.startsWith('p')))
+const publicOnly = <T>(m: Record<string, T>) =>
+  Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith('p')))
 
 export function useBoard(auth: Auth): Board {
   const { token, viewer } = auth
@@ -239,7 +252,10 @@ export function useBoard(auth: Auth): Board {
     let privateJobs: Job[] | null = []
     if (seesPrivate) {
       try {
-        privateJobs = issuesOf(await api.paginate<RawIssue>(`/repos/${PRIVATE_REPO}/issues?state=all&per_page=100`), PRIVATE)
+        privateJobs = issuesOf(
+          await api.paginate<RawIssue>(`/repos/${PRIVATE_REPO}/issues?state=all&per_page=100`),
+          PRIVATE,
+        )
       } catch {
         privateJobs = null // keep the private jobs we had rather than blanking them on a hiccup
       }
@@ -352,7 +368,11 @@ export function useBoard(auth: Auth): Board {
         } else if (Date.now() - started > 150_000) {
           finish()
           if (real) putIssue(real, sourceOf(job))
-          toast('The board bot has not caught up yet. Refresh in a minute, or check the Actions tab on GitHub.', 'info', 8000)
+          toast(
+            'The board bot has not caught up yet. Refresh in a minute, or check the Actions tab on GitHub.',
+            'info',
+            8000,
+          )
         } else {
           timers.current.set(key, setTimeout(poll, 4000))
         }
@@ -368,7 +388,18 @@ export function useBoard(auth: Auth): Board {
   )
 
   const jobs = useMemo(() => Object.values(jobMap), [jobMap])
-  return { jobs, notes, loading, error, live: source === 'github' && !!token, syncedAt, pending, refresh, loadNotes, actions }
+  return {
+    jobs,
+    notes,
+    loading,
+    error,
+    live: source === 'github' && !!token,
+    syncedAt,
+    pending,
+    refresh,
+    loadNotes,
+    actions,
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -411,7 +442,8 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       const v = me()
       const title = input.title.trim()
       if (input.private) {
-        if (!v.isAdmin || v.privateAccess !== 'yes') throw new Error('Only admins with access to the private repository can add private jobs.')
+        if (!v.isAdmin || v.privateAccess !== 'yes')
+          throw new Error('Only admins with access to the private repository can add private jobs.')
         const raw = await api.post<RawIssue>(`/repos/${PRIVATE_REPO}/issues`, {
           title,
           body: formatBody({ description: input.description, due: input.due }),
@@ -537,7 +569,13 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         return
       }
       await command(job, `/priority ${key}`)
-      waitForBot(job, 'Updating…', (j) => ({ ...j, priority: key }), (j) => j.priority === key, 'Priority updated')
+      waitForBot(
+        job,
+        'Updating…',
+        (j) => ({ ...j, priority: key }),
+        (j) => j.priority === key,
+        'Priority updated',
+      )
     },
 
     async setDue(job: Job, due: string | null) {
@@ -553,7 +591,10 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       const v = me()
       const fields = { description: input.description, due: input.due }
       // A body that still has its Priority answer (the bot hasn't filed it yet) keeps it in step.
-      const body = updateBody(job.body, parseBody(job.body).hasPriority ? { ...fields, priority: input.priority } : fields)
+      const body = updateBody(
+        job.body,
+        parseBody(job.body).hasPriority ? { ...fields, priority: input.priority } : fields,
+      )
       const priorityChanged = input.priority !== job.priority
       const patch: Record<string, unknown> = { title: input.title.trim(), body }
       if (priorityChanged && v.isAdmin) patch.labels = priorityLabels(job, input.priority)
@@ -563,7 +604,13 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       if (priorityChanged && v.isAdmin) await record(job, `/priority ${input.priority}`)
       if (priorityChanged && !v.isAdmin) {
         await command(job, `/priority ${input.priority}`)
-        waitForBot(job, 'Updating…', (j) => ({ ...j, priority: input.priority }), (j) => j.priority === input.priority, 'Saved')
+        waitForBot(
+          job,
+          'Updating…',
+          (j) => ({ ...j, priority: input.priority }),
+          (j) => j.priority === input.priority,
+          'Saved',
+        )
       } else {
         toast('Saved')
       }
