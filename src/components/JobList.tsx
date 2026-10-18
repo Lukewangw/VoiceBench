@@ -197,6 +197,7 @@ export function JobList({
       {closed.length > 0 && (
         <details className="closed-section" open={!!query}>
           <summary>
+            <Icon name="chevronRight" size={15} className="chevron" />
             {tab === 'others' ? 'Declined' : 'Cancelled'} <span className="tab-count">{closed.length}</span>
           </summary>
           <div className="card">

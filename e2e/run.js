@@ -694,6 +694,8 @@ async function main() {
   await p.waitForSelector('.tab:has-text("Others") .tab-count:text("1")')
   // Declined proposals don't vanish: they're folded away under Others, and search finds them.
   await p.click('.closed-section summary:has-text("Declined")')
+  await sleep(300)
+  await p.screenshot({ path: OUT + '/12b-declined-open.png' })
   assert.equal(
     await p.locator('.closed-section .row:has-text("Add a Mandarin subset") .due-label').innerText(),
     'Declined',

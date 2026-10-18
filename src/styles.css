@@ -863,7 +863,16 @@ button {
   font-weight: 600;
   color: var(--text-2);
   cursor: pointer;
-  list-style: revert;
+  list-style: none;
+}
+.closed-section > summary::-webkit-details-marker {
+  display: none;
+}
+.closed-section > summary .chevron {
+  transition: transform 0.15s;
+}
+.closed-section[open] > summary .chevron {
+  transform: rotate(90deg);
 }
 .closed-section > .card {
   margin-top: 8px;
