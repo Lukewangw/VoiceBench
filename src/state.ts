@@ -50,7 +50,9 @@ export interface Auth {
 async function whoIs(token: string): Promise<Viewer> {
   const api = createClient(token)
   const { data: user, headers } = await api.request<RawUser>('GET', '/user')
-  const scopes = headers.get('x-oauth-scopes') // null for fine-grained tokens
+  // Classic tokens list their scopes; fine-grained and app tokens send no list (or an empty one),
+  // in which case GitHub itself will refuse anything the token can't do.
+  const scopes = headers.get('x-oauth-scopes')?.trim() || null
   if (scopes !== null && !/(^|[\s,])(public_repo|repo)(?=[\s,]|$)/.test(scopes)) {
     throw new GitHubError('That token can only read. Create one with the "public_repo" scope ticked.', 403)
   }
@@ -162,6 +164,9 @@ async function fetchSnapshot(): Promise<Snapshot | null> {
   }
 }
 
+/** How long a job this browser wrote outranks an issue list that doesn't have the change yet. */
+const WRITE_SETTLE_MS = 30_000
+
 const byKey = (jobs: Job[]) => Object.fromEntries(jobs.map((j) => [j.key, j])) as Record<string, Job>
 const without = <T,>(map: Record<string, T>, key: string) => {
   const next = { ...map }
@@ -191,11 +196,26 @@ export function useBoard(auth: Auth): Board {
   const lastSync = useRef(0)
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
+  // Jobs this browser just changed. GitHub's issue lists take a few seconds to catch up with a
+  // write, so a refresh in that window could briefly undo it on screen; the written copy wins
+  // until the list has it.
+  const written = useRef(new Map<string, { job: Job; at: number }>())
+
   const withOverlay = (job: Job) => overlays.current.get(job.key)?.(job) ?? job
   const putIssue = useCallback((raw: RawIssue, where: Source) => {
-    const job = withOverlay(toJob(raw, where))
-    setJobMap((m) => ({ ...m, [job.key]: job }))
+    const job = toJob(raw, where)
+    written.current.set(job.key, { job, at: Date.now() })
+    setJobMap((m) => ({ ...m, [job.key]: withOverlay(job) }))
   }, [])
+  /** A freshly loaded set of jobs, minus anything older than what this browser just wrote. */
+  const settle = (loaded: Record<string, Job>) => {
+    const now = Date.now()
+    for (const [key, { job, at }] of written.current) {
+      if (now - at > WRITE_SETTLE_MS) written.current.delete(key)
+      else if (!loaded[key] || loaded[key].updatedAt < job.updatedAt) loaded[key] = withOverlay(job)
+    }
+    return loaded
+  }
   const putNote = useCallback((job: Job, raw: RawComment) => {
     const note = toNote({ ...raw, issue_number: job.number })
     setNotes((m) => ({ ...m, [job.key]: [...(m[job.key] ?? []).filter((n) => n.id !== note.id), note] }))
@@ -205,7 +225,7 @@ export function useBoard(auth: Auth): Board {
     const snap = await fetchSnapshot()
     if (!snap) return false
     // Keep private jobs an admin already loaded; the snapshot only ever has public ones.
-    setJobMap((m) => ({ ...byKey(issuesOf(snap.issues, PUBLIC).map(withOverlay)), ...privateOnly(m) }))
+    setJobMap((m) => settle({ ...byKey(issuesOf(snap.issues, PUBLIC).map(withOverlay)), ...privateOnly(m) }))
     const grouped: Record<string, Note[]> = {}
     for (const c of snap.comments) (grouped[jobKey(c.issue_number ?? 0)] ??= []).push(toNote(c))
     setNotes((m) => ({ ...grouped, ...privateOnly(m) }))
@@ -224,10 +244,12 @@ export function useBoard(auth: Auth): Board {
         privateJobs = null // keep the private jobs we had rather than blanking them on a hiccup
       }
     }
-    setJobMap((m) => ({
-      ...byKey(publicJobs.map(withOverlay)),
-      ...(privateJobs ? byKey(privateJobs.map(withOverlay)) : privateOnly(m)),
-    }))
+    setJobMap((m) =>
+      settle({
+        ...byKey(publicJobs.map(withOverlay)),
+        ...(privateJobs ? byKey(privateJobs.map(withOverlay)) : privateOnly(m)),
+      }),
+    )
     setSource('github')
     setSyncedAt(new Date().toISOString())
   }, [api, seesPrivate])
@@ -254,6 +276,7 @@ export function useBoard(auth: Auth): Board {
     ;(async () => {
       lastSync.current = Date.now()
       // Someone else (or nobody) is signed in now: private jobs go away until access is confirmed.
+      written.current.clear()
       setJobMap((m) => publicOnly(m))
       setNotes((m) => publicOnly(m))
       const hadSnapshot = await loadSnapshot()

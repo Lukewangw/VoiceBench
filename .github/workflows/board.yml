@@ -10,6 +10,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+  # Safety net: republish every six hours in case an event was missed.
+  schedule:
+    - cron: '17 */6 * * *'
 
 permissions: {}
 
@@ -32,6 +35,7 @@ jobs:
           persist-credentials: false
       - uses: actions/github-script@v9
         with:
+          retries: 3
           script: |
             const { pathToFileURL } = require('node:url')
             const file = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/triage.js`)
@@ -62,6 +66,7 @@ jobs:
         id: pages
         uses: actions/github-script@v9
         with:
+          retries: 3
           script: |
             let site = null
             try {
@@ -95,6 +100,7 @@ jobs:
         if: steps.pages.outputs.on == 'true'
         uses: actions/github-script@v9
         with:
+          retries: 3
           script: |
             const { pathToFileURL } = require('node:url')
             const file = pathToFileURL(`${process.env.GITHUB_WORKSPACE}/.github/scripts/snapshot.js`)
