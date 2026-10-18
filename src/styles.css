@@ -585,6 +585,16 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.row-mine::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--accent);
+}
 .row-done .row-title {
   color: var(--text-2);
 }
@@ -677,6 +687,12 @@ button {
 }
 .avatar-stack .avatar + .avatar {
   margin-left: -7px;
+}
+.avatar-stack .avatar-me {
+  position: relative;
+  box-shadow:
+    0 0 0 2px var(--surface),
+    0 0 0 3.5px var(--accent);
 }
 .avatar-more {
   margin-left: 4px;

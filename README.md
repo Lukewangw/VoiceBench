@@ -12,7 +12,10 @@ things up themselves.
 - **Others** is where anyone can propose a job. An admin approves it (it moves to Jobs) or declines it.
 - **Done** keeps what's been finished.
 - **Pick up** a job to put yourself on it; several people can work on one job. **Mark done** when it's finished,
-  or **Drop** it if you can't get to it.
+  or **Drop** it if you can't get to it. Jobs you're on are marked with a green bar.
+
+Admins' changes apply right away. Everyone else's go through the board bot and land within a minute; the page
+shows "Picking up…" and similar until they do.
 
 Looking needs no account. To make changes from the board, click **Sign in** and paste a GitHub token (the dialog
 links to a token page with the right scope already ticked). The token stays in your browser and is only sent to
@@ -65,6 +68,9 @@ Every job is an issue in this repository, so everything also works from GitHub:
   ([`snapshot.js`](.github/scripts/snapshot.js)), so the page loads instantly for everyone.
 - **Site**: a small React app in [`src/`](src). People who sign in read GitHub directly, so their changes show up
   right away. Rules shared by the site and the bot live in [`shared/board.js`](shared/board.js).
+- **Activity**: every change made from the board is also left as a command comment, so the activity (and GitHub's
+  notifications) show who did what. When an admin's change was already made directly, the comment carries a hidden
+  note and the bot only acknowledges it. The bot handles each issue's commands one run at a time, oldest first.
 
 ### One-time setup
 

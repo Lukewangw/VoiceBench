@@ -216,13 +216,28 @@ export function parseCommands(text) {
   return found
 }
 
-/** The comment without its command lines, i.e. the part people wrote for each other. */
+// When the board changes an issue directly (people with the rights to do so), it still leaves the
+// command as a comment so the change shows up in the activity. This hidden note marks such a
+// comment: the bot acknowledges it but doesn't apply it again.
+export const RECORD_NOTE = '<!-- job board: already applied -->'
+
+export function asRecord(command) {
+  return `${command}\n\n${RECORD_NOTE}`
+}
+
+export function isRecord(text) {
+  return /<!--\s*job board: already applied\s*-->/i.test(String(text ?? ''))
+}
+
+/** The comment without its command lines (or hidden notes), i.e. the part people wrote for each other. */
 export function stripCommands(text) {
   let inFence = false
   const kept = []
   for (const line of String(text ?? '').replace(/\r\n?/g, '\n').split('\n')) {
-    if (/^\s*(```|~~~)/.test(line)) inFence = !inFence
-    if (inFence || /^\s*(```|~~~)/.test(line) || parseCommands(line).length === 0) kept.push(line)
+    const fence = /^\s*(```|~~~)/.test(line)
+    if (fence) inFence = !inFence
+    if (inFence || fence) kept.push(line)
+    else if (!parseCommands(line).length && !/^\s*<!--.*-->\s*$/.test(line)) kept.push(line)
   }
   return kept.join('\n').trim()
 }

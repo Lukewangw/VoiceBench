@@ -3,6 +3,7 @@ import {
   DEFAULT_PRIORITY,
   JOB_LABEL,
   PROPOSAL_LABEL,
+  asRecord,
   formatBody,
   isPriorityLabel,
   parseBody,
@@ -300,9 +301,9 @@ export function useBoard(auth: Auth): Board {
 }
 
 // ---------------------------------------------------------------------------
-// Changes. Admins (write access) change issues directly and leave a command comment as the record.
-// Everyone else leaves the command comment and the bot applies it. Either way the comment is posted
-// first, so the bot can still apply it if the direct change fails.
+// Changes. People with write access (admins) change issues directly, then leave the command as a
+// "record" comment so it shows in the activity; the bot only acknowledges records. Everyone else
+// posts the command and the bot applies it within a minute.
 
 interface ActionDeps {
   api: ReturnType<typeof createClient>
@@ -318,9 +319,15 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
     return viewer
   }
   const path = (n: number) => `${ISSUES}/${n}`
-  const command = async (n: number, text: string) => putNote(n, await api.post<RawComment>(`${path(n)}/comments`, { body: text }))
+  const postComment = async (n: number, body: string) =>
+    putNote(n, await api.post<RawComment>(`${path(n)}/comments`, { body }))
+  /** For the bot to apply. */
+  const command = (n: number, text: string) => postComment(n, text)
+  /** Already applied by the board; kept for the activity feed. */
+  const record = (n: number, text: string) => postComment(n, asRecord(text))
   const update = async (n: number, patch: object) => putIssue(await api.patch<RawIssue>(path(n), patch))
   const priorityLabels = (job: Job, key: PriorityKey) => [...job.labels.filter((l) => !isPriorityLabel(l)), key]
+  const dueCommand = (due: string | null) => (due ? `/due ${due}` : '/due none')
 
   return {
     canEditDetails(job: Job) {
@@ -345,110 +352,116 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
 
     async approve(job: Job) {
       me()
-      await command(job.number, '/approve')
       const labels = job.labels.filter((l) => l.toLowerCase() !== PROPOSAL_LABEL).concat(JOB_LABEL)
       if (!labels.some(isPriorityLabel)) labels.push(job.priority ?? DEFAULT_PRIORITY)
       await update(job.number, { labels, ...(job.status === 'closed' ? { state: 'open' } : {}) })
+      await record(job.number, '/approve')
       toast('Approved. It is on the board now.')
     },
 
     async decline(job: Job, reason = '') {
       me()
       const why = reason.replace(/\s+/g, ' ').trim()
-      await command(job.number, why ? `/reject ${why}` : '/reject')
       await update(job.number, { state: 'closed', state_reason: 'not_planned' })
+      await record(job.number, why ? `/reject ${why}` : '/reject')
       toast(job.status === 'proposal' ? 'Proposal declined' : 'Job cancelled')
     },
 
     async take(job: Job) {
       const v = me()
-      await command(job.number, '/take')
       if (v.isAdmin) {
         putIssue(await api.post<RawIssue>(`${path(job.number)}/assignees`, { assignees: [v.login] }))
+        await record(job.number, '/take')
         toast("You're on it")
-      } else {
-        const self: Person = { login: v.login, avatarUrl: v.avatarUrl, url: v.url, isBot: false }
-        waitForBot(
-          job.number,
-          'Picking up…',
-          (j) => (isOn(j, v.login) ? j : { ...j, assignees: [...j.assignees, self], status: 'active' }),
-          (j) => isOn(j, v.login),
-          "You're on it",
-        )
+        return
       }
+      await command(job.number, '/take')
+      const self: Person = { login: v.login, avatarUrl: v.avatarUrl, url: v.url, isBot: false }
+      waitForBot(
+        job.number,
+        'Picking up…',
+        (j) => (isOn(j, v.login) ? j : { ...j, assignees: [...j.assignees, self], status: 'active' }),
+        (j) => isOn(j, v.login),
+        "You're on it",
+      )
     },
 
     async drop(job: Job) {
       const v = me()
-      await command(job.number, '/drop')
       if (v.isAdmin) {
         putIssue(await api.del<RawIssue>(`${path(job.number)}/assignees`, { assignees: [v.login] }))
+        await record(job.number, '/drop')
         toast('Dropped. It is up for grabs again.')
-      } else {
-        waitForBot(
-          job.number,
-          'Dropping…',
-          (j) => {
-            const assignees = j.assignees.filter((a) => !sameLogin(a.login, v.login))
-            return { ...j, assignees, status: j.status === 'active' && !assignees.length ? 'open' : j.status }
-          },
-          (j) => !isOn(j, v.login),
-          'Dropped. It is up for grabs again.',
-        )
+        return
       }
+      await command(job.number, '/drop')
+      waitForBot(
+        job.number,
+        'Dropping…',
+        (j) => {
+          const assignees = j.assignees.filter((a) => !sameLogin(a.login, v.login))
+          return { ...j, assignees, status: j.status === 'active' && !assignees.length ? 'open' : j.status }
+        },
+        (j) => !isOn(j, v.login),
+        'Dropped. It is up for grabs again.',
+      )
     },
 
     async done(job: Job) {
       const v = me()
-      await command(job.number, '/done')
       if (v.isAdmin) {
         await update(job.number, { state: 'closed', state_reason: 'completed' })
+        await record(job.number, '/done')
         toast('Marked done 🎉')
-      } else {
-        waitForBot(
-          job.number,
-          'Marking done…',
-          (j) => ({ ...j, status: 'done', closedAt: j.closedAt ?? new Date().toISOString() }),
-          (j) => j.status === 'done',
-          'Marked done 🎉',
-        )
+        return
       }
+      await command(job.number, '/done')
+      waitForBot(
+        job.number,
+        'Marking done…',
+        (j) => ({ ...j, status: 'done', closedAt: j.closedAt ?? new Date().toISOString() }),
+        (j) => j.status === 'done',
+        'Marked done 🎉',
+      )
     },
 
     async reopen(job: Job) {
       const v = me()
-      await command(job.number, '/reopen')
       if (v.isAdmin) {
         await update(job.number, { state: 'open' })
+        await record(job.number, '/reopen')
         toast('Reopened')
-      } else {
-        waitForBot(
-          job.number,
-          'Reopening…',
-          (j) => ({ ...j, status: j.assignees.length ? 'active' : 'open', closedAt: null }),
-          (j) => j.status !== 'done' && j.status !== 'closed',
-          'Reopened',
-        )
+        return
       }
+      await command(job.number, '/reopen')
+      waitForBot(
+        job.number,
+        'Reopening…',
+        (j) => ({ ...j, status: j.assignees.length ? 'active' : 'open', closedAt: null }),
+        (j) => j.status !== 'done' && j.status !== 'closed',
+        'Reopened',
+      )
     },
 
     async setPriority(job: Job, key: PriorityKey) {
       const v = me()
       if (job.priority === key) return
-      await command(job.number, `/priority ${key}`)
       if (v.isAdmin) {
         await update(job.number, { labels: priorityLabels(job, key) })
+        await record(job.number, `/priority ${key}`)
         toast(`Priority set to ${key} · ${priorityName(key)}`)
-      } else {
-        waitForBot(job.number, 'Updating…', (j) => ({ ...j, priority: key }), (j) => j.priority === key, 'Priority updated')
+        return
       }
+      await command(job.number, `/priority ${key}`)
+      waitForBot(job.number, 'Updating…', (j) => ({ ...j, priority: key }), (j) => j.priority === key, 'Priority updated')
     },
 
     async setDue(job: Job, due: string | null) {
       me()
       if (job.due === due) return
-      await command(job.number, due ? `/due ${due}` : '/due none')
+      // Admins and the author of a proposal can both edit the issue text directly.
       await update(job.number, { body: updateBody(job.body, { due }) })
+      await record(job.number, dueCommand(due))
       toast(due ? 'Due date updated' : 'Due date cleared')
     },
 
@@ -457,21 +470,24 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       const fields = { description: input.description, due: input.due }
       // A body that still has its Priority answer (the bot hasn't filed it yet) keeps it in step.
       const body = updateBody(job.body, parseBody(job.body).hasPriority ? { ...fields, priority: input.priority } : fields)
-      const patch: Record<string, unknown> = { title: input.title.trim(), body }
-      if (input.due !== job.due) await command(job.number, input.due ? `/due ${input.due}` : '/due none')
       const priorityChanged = input.priority !== job.priority
-      if (priorityChanged) {
-        await command(job.number, `/priority ${input.priority}`)
-        if (v.isAdmin) patch.labels = priorityLabels(job, input.priority)
-        else waitForBot(job.number, 'Updating…', (j) => ({ ...j, priority: input.priority }), (j) => j.priority === input.priority, 'Saved')
-      }
+      const patch: Record<string, unknown> = { title: input.title.trim(), body }
+      if (priorityChanged && v.isAdmin) patch.labels = priorityLabels(job, input.priority)
       await update(job.number, patch)
-      if (!priorityChanged || v.isAdmin) toast('Saved')
+
+      if (input.due !== job.due) await record(job.number, dueCommand(input.due))
+      if (priorityChanged && v.isAdmin) await record(job.number, `/priority ${input.priority}`)
+      if (priorityChanged && !v.isAdmin) {
+        await command(job.number, `/priority ${input.priority}`)
+        waitForBot(job.number, 'Updating…', (j) => ({ ...j, priority: input.priority }), (j) => j.priority === input.priority, 'Saved')
+      } else {
+        toast('Saved')
+      }
     },
 
     async comment(job: Job, text: string) {
       me()
-      await command(job.number, text)
+      await postComment(job.number, text)
     },
   }
 }

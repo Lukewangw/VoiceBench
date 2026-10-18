@@ -1,9 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import {
+  asRecord,
   boardStatus,
   formatBody,
   isCommandOnly,
+  isRecord,
   mentionedUser,
   parseBody,
   parseCommands,
@@ -125,6 +127,15 @@ test('stripCommands keeps the human part of a comment', () => {
   assert.equal(stripCommands('/approve\n/p1'), '')
   assert.equal(stripCommands('run this:\n```\n/done\n```'), 'run this:\n```\n/done\n```')
   assert.equal(stripCommands('see /home/x'), 'see /home/x')
+})
+
+test('records: a command the board already applied, hidden note included', () => {
+  const text = asRecord('/reject out of scope')
+  assert.equal(isRecord(text), true)
+  assert.equal(isRecord('/reject out of scope'), false)
+  assert.deepEqual(parseCommands(text), [{ name: 'reject', arg: 'out of scope' }])
+  assert.equal(stripCommands(text), '')
+  assert.equal(isCommandOnly(text), true)
 })
 
 test('mentionedUser', () => {

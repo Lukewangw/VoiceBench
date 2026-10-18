@@ -5,13 +5,20 @@ const escapeHtml = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '
 
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', 'VITE_')
-  const title = env.VITE_TITLE || env.VITE_REPO?.split('/')[1] || 'Job board'
+  const [owner = '', name = ''] = (env.VITE_REPO ?? '').split('/')
+  const title = env.VITE_TITLE || name || 'Job board'
+  // Where GitHub Pages serves the board; link previews need absolute URLs.
+  const url = owner && name ? `https://${owner.toLowerCase()}.github.io/${name}/` : './'
   return {
     // Relative asset paths, so the site works under https://<user>.github.io/<repo>/ as is.
     base: './',
     plugins: [
       react(),
-      { name: 'board-title', transformIndexHtml: (html: string) => html.replaceAll('%BOARD_TITLE%', escapeHtml(title)) },
+      {
+        name: 'board-meta',
+        transformIndexHtml: (html: string) =>
+          html.replaceAll('%BOARD_TITLE%', escapeHtml(title)).replaceAll('%BOARD_URL%', escapeHtml(url)),
+      },
     ],
   }
 })

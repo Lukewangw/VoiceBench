@@ -109,10 +109,10 @@ export function Spinner({ size = 14 }: { size?: number }) {
 const sized = (url: string, px: number) =>
   url.startsWith('https://avatars.githubusercontent.com/') ? `${url}${url.includes('?') ? '&' : '?'}s=${px}` : url
 
-export function Avatar({ person, size = 24 }: { person: Person; size?: number }) {
+export function Avatar({ person, size = 24, className = '' }: { person: Person; size?: number; className?: string }) {
   return (
     <img
-      className="avatar"
+      className={`avatar ${className}`}
       src={sized(person.avatarUrl, size * 2)}
       width={size}
       height={size}
@@ -123,15 +123,17 @@ export function Avatar({ person, size = 24 }: { person: Person; size?: number })
   )
 }
 
-export function AvatarStack({ people, size = 24, max = 3 }: { people: Person[]; size?: number; max?: number }) {
+export function AvatarStack({ people, size = 24, max = 3, me }: { people: Person[]; size?: number; max?: number; me?: string }) {
   if (!people.length) {
     return <span className="avatar-empty" style={{ width: size, height: size }} title="Nobody yet. Pick it up!" />
   }
-  const shown = people.slice(0, max)
+  const isMe = (p: Person) => !!me && p.login.toLowerCase() === me.toLowerCase()
+  // You first, so you're never hidden behind "+2".
+  const shown = [...people].sort((a, b) => Number(isMe(b)) - Number(isMe(a))).slice(0, max)
   return (
-    <span className="avatar-stack" title={people.map((p) => p.login).join(', ')}>
+    <span className="avatar-stack" title={people.map((p) => (isMe(p) ? `${p.login} (you)` : p.login)).join(', ')}>
       {shown.map((p) => (
-        <Avatar key={p.login} person={p} size={size} />
+        <Avatar key={p.login} person={p} size={size} className={isMe(p) ? 'avatar-me' : ''} />
       ))}
       {people.length > max && <span className="avatar-more">+{people.length - max}</span>}
     </span>

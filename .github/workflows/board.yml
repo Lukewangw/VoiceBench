@@ -21,6 +21,11 @@ jobs:
     permissions:
       contents: read
       issues: write
+    # Runs for one issue go one at a time. Each run handles all of that issue's pending commands, so
+    # a run that gets dropped from the queue loses nothing.
+    concurrency:
+      group: triage-${{ github.event.issue.number }}
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v7
         with:

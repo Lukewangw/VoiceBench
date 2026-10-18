@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { shortDate, timeAgo } from '../lib/format'
-import type { Job } from '../lib/model'
+import { isOn, type Job } from '../lib/model'
 import type { Viewer } from '../state'
 import { AvatarStack, DueDate, Icon, PriorityPill, Spinner } from './ui'
 
@@ -71,6 +71,7 @@ export function JobList({ tab, jobs, othersCount, loading, viewer, pending, onNe
 function Row({ tab, job, viewer, pending, onApprove }: { tab: Tab; job: Job; viewer: Viewer | null; pending?: string; onApprove(job: Job): Promise<void> }) {
   const [busy, setBusy] = useState(false)
   const done = tab === 'done'
+  const mine = tab === 'jobs' && isOn(job, viewer?.login)
   const meta =
     tab === 'others'
       ? `Proposed by ${job.author.login} · ${timeAgo(job.createdAt)}`
@@ -81,9 +82,12 @@ function Row({ tab, job, viewer, pending, onApprove }: { tab: Tab; job: Job; vie
         : null
 
   return (
-    <li className={`row row-${job.status}`}>
+    <li className={`row row-${job.status}${mine ? ' row-mine' : ''}`}>
       <a className="row-link" href={`#/${tab}/${job.number}`}>
-        <span className="sr-only">Open {job.title}</span>
+        <span className="sr-only">
+          Open {job.title}
+          {mine && " (you're on it)"}
+        </span>
       </a>
       <PriorityPill priority={job.priority} />
       <div className="row-main">
@@ -114,7 +118,7 @@ function Row({ tab, job, viewer, pending, onApprove }: { tab: Tab; job: Job; vie
           </button>
         )
       )}
-      <AvatarStack people={tab === 'others' ? [job.author] : job.assignees} />
+      <AvatarStack people={tab === 'others' ? [job.author] : job.assignees} me={viewer?.login} />
       {done ? (
         <span className="due due-later">{job.closedAt ? shortDate(new Date(job.closedAt)) : ''}</span>
       ) : (
