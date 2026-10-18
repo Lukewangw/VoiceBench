@@ -1,7 +1,6 @@
-import { useMemo, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { priorityName, type PriorityKey } from '../../shared/board.js'
 import { dueRelative, dueShort, dueTone } from '../lib/format'
-import { renderMarkdown } from '../lib/markdown'
 import type { Person } from '../lib/model'
 
 // Stroke icons drawn on a 24px grid (shapes after Lucide, ISC license).
@@ -56,6 +55,12 @@ const ICONS: Record<string, ReactNode> = {
     </>
   ),
   flag: <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7" />,
+  search: (
+    <>
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </>
+  ),
 }
 
 export type IconName = keyof typeof ICONS
@@ -160,7 +165,25 @@ export function DueDate({ due, muted = false }: { due: string | null; muted?: bo
   )
 }
 
+// The Markdown renderer (marked + DOMPurify) is only needed inside a job, so it loads on its own,
+// after the board is up. Until then the text shows as plain text.
+type MarkdownModule = typeof import('../lib/markdown')
+let markdown: MarkdownModule | null = null
+let loading: Promise<MarkdownModule> | null = null
+export function loadMarkdown() {
+  return (loading ??= import('../lib/markdown').then((m) => (markdown = m)))
+}
+
 export function Markdown({ text, className = '' }: { text: string; className?: string }) {
-  const html = useMemo(() => renderMarkdown(text), [text])
+  const [html, setHtml] = useState(() => markdown?.renderMarkdown(text) ?? null)
+  useEffect(() => {
+    let live = true
+    if (markdown) setHtml(markdown.renderMarkdown(text))
+    else void loadMarkdown().then((m) => live && setHtml(m.renderMarkdown(text)))
+    return () => {
+      live = false
+    }
+  }, [text])
+  if (html === null) return <div className={`markdown markdown-plain ${className}`}>{text}</div>
   return <div className={`markdown ${className}`} dangerouslySetInnerHTML={{ __html: html }} />
 }

@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Header } from './components/Header'
 import { JobDrawer } from './components/JobDrawer'
 import { JobForm } from './components/JobForm'
 import { JobList, Tabs, type Tab } from './components/JobList'
 import { SignIn } from './components/SignIn'
 import { Toasts } from './components/Toasts'
-import { Icon } from './components/ui'
+import { Icon, loadMarkdown } from './components/ui'
 import { REPO, REPO_URL, TITLE } from './config'
 import { byPriority, byRecentlyClosed, type Job } from './lib/model'
+import { matchesQuery } from './lib/search'
 import { errorText, useAuth, useBoard, type JobInput } from './state'
 import { toast } from './toast'
 
@@ -46,17 +47,20 @@ export function App() {
   const [form, setForm] = useState<{ job?: Job } | null>(null)
   const [signingIn, setSigningIn] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+  const [query, setQuery] = useState('')
+  const searchRef = useRef<HTMLInputElement>(null)
   const { viewer } = auth
 
-  const lists = useMemo(
-    () => ({
-      jobs: board.jobs.filter((j) => j.status === 'open' || j.status === 'active').sort(byPriority),
-      others: board.jobs.filter((j) => j.status === 'proposal').sort(byPriority),
-      done: board.jobs.filter((j) => j.status === 'done').sort(byRecentlyClosed),
-    }),
-    [board.jobs],
-  )
+  const lists = useMemo(() => {
+    const shown = board.jobs.filter((j) => matchesQuery(j, query))
+    return {
+      jobs: shown.filter((j) => j.status === 'open' || j.status === 'active').sort(byPriority),
+      others: shown.filter((j) => j.status === 'proposal').sort(byPriority),
+      done: shown.filter((j) => j.status === 'done').sort(byRecentlyClosed),
+    }
+  }, [board.jobs, query])
   const counts = { jobs: lists.jobs.length, others: lists.others.length, done: lists.done.length }
+  const waitingProposals = useMemo(() => board.jobs.filter((j) => j.status === 'proposal').length, [board.jobs])
   const selected = route.job ? (board.jobs.find((j) => j.key === route.job) ?? null) : null
 
   useEffect(() => {
@@ -101,6 +105,36 @@ export function App() {
   }
 
   const showNew = route.tab !== 'done' && (viewer?.isAdmin || route.tab === 'others')
+  const openNew = useCallback(() => {
+    // Members add jobs as proposals, which live under Others.
+    if (!viewer?.isAdmin && route.tab !== 'others') go('others')
+    setForm({})
+  }, [viewer?.isAdmin, route.tab, go])
+
+  // Keyboard: "/" searches, "n" adds a job (or proposes one). Ignored while typing or in a dialog.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.metaKey || e.ctrlKey || e.altKey || e.defaultPrevented) return
+      const target = e.target instanceof HTMLElement ? e.target : null
+      if (target?.closest('input, textarea, select, [contenteditable="true"]')) return
+      if (document.querySelector('.drawer, .modal')) return
+      if (e.key === '/') {
+        e.preventDefault()
+        searchRef.current?.focus()
+      } else if (e.key === 'n') {
+        e.preventDefault()
+        openNew()
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [openNew])
+
+  // Fetch the Markdown renderer in the background once the board is up, so opening a job is instant.
+  useEffect(() => {
+    const idle = window.requestIdleCallback ?? ((fn: () => void) => window.setTimeout(fn, 1200))
+    idle(() => void loadMarkdown())
+  }, [])
 
   return (
     <>
@@ -124,8 +158,26 @@ export function App() {
           <>
             <div className="page-head">
               <Tabs tab={route.tab} counts={counts} />
+              <label className="search">
+                <Icon name="search" />
+                <input
+                  ref={searchRef}
+                  type="search"
+                  value={query}
+                  placeholder="Search"
+                  aria-label="Search jobs by title, person or #number"
+                  onChange={(e) => setQuery(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setQuery('')
+                      e.currentTarget.blur()
+                    }
+                  }}
+                />
+                {!query && <kbd className="search-key">/</kbd>}
+              </label>
               {showNew && (
-                <button className="btn btn-primary" onClick={() => setForm({})}>
+                <button className="btn btn-primary" onClick={() => setForm({})} title="Keyboard: n">
                   <Icon name="plus" /> {viewer?.isAdmin ? 'New job' : 'Propose a job'}
                 </button>
               )}
@@ -136,11 +188,13 @@ export function App() {
               <JobList
                 tab={route.tab}
                 jobs={lists[route.tab]}
-                othersCount={counts.others}
+                othersCount={waitingProposals}
+                query={query}
+                onClearQuery={() => setQuery('')}
                 loading={board.loading}
                 viewer={viewer}
                 pending={board.pending}
-                onNew={() => setForm({})}
+                onNew={openNew}
                 onApprove={approve}
               />
             )}

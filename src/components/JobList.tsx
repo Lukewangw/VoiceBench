@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { shortDate, timeAgo } from '../lib/format'
 import { isOn, type Job } from '../lib/model'
 import type { Viewer } from '../state'
@@ -24,10 +24,15 @@ export function Tabs({ tab, counts }: { tab: Tab; counts: Record<Tab, number> })
   )
 }
 
+/** Long lists (Done, mostly) show this many rows at a time. */
+const PAGE = 50
+
 interface ListProps {
   tab: Tab
   jobs: Job[]
   othersCount: number
+  query: string
+  onClearQuery(): void
   loading: boolean
   viewer: Viewer | null
   pending: Record<string, string>
@@ -35,23 +40,43 @@ interface ListProps {
   onApprove(job: Job): Promise<void>
 }
 
-export function JobList({ tab, jobs, othersCount, loading, viewer, pending, onNew, onApprove }: ListProps) {
+export function JobList({ tab, jobs, othersCount, query, onClearQuery, loading, viewer, pending, onNew, onApprove }: ListProps) {
+  const [limit, setLimit] = useState(PAGE)
+  useEffect(() => setLimit(PAGE), [tab, query])
+  const hidden = jobs.length - limit
+
   return (
     <>
-      {tab === 'others' && <OthersIntro viewer={viewer} />}
+      {tab === 'others' && !query && <OthersIntro viewer={viewer} />}
       <div className="card">
         {loading && !jobs.length ? (
           <Skeleton />
+        ) : !jobs.length && query ? (
+          <div className="empty">
+            <span className="empty-icon">
+              <Icon name="search" size={22} />
+            </span>
+            <div className="empty-title">Nothing here matches “{query}”</div>
+            <div className="empty-text">Try another word, a name, or a number like #12. Other tabs may have matches.</div>
+            <button className="btn btn-outline" onClick={onClearQuery}>
+              <Icon name="x" size={15} /> Clear search
+            </button>
+          </div>
         ) : !jobs.length ? (
           <Empty tab={tab} viewer={viewer} onNew={onNew} />
         ) : (
           <ul className="list">
-            {jobs.map((job) => (
+            {jobs.slice(0, limit).map((job) => (
               <Row key={job.key} tab={tab} job={job} viewer={viewer} pending={pending[job.key]} onApprove={onApprove} />
             ))}
           </ul>
         )}
-        {tab === 'jobs' && !loading && (
+        {hidden > 0 && (
+          <button className="more-row" onClick={() => setLimit((n) => n + PAGE)}>
+            Show {Math.min(PAGE, hidden)} more <span className="muted">· {hidden} not shown</span>
+          </button>
+        )}
+        {tab === 'jobs' && !loading && !query && (
           <a className="others-row" href="#/others">
             <Icon name="lightbulb" />
             <span className="others-row-title">Others</span>
