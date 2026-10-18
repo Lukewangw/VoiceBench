@@ -9,15 +9,17 @@ things up themselves.
 
 - **Jobs** lists everything that's approved and not done yet, sorted by priority (P0 urgent → P3 low), then by
   due date. Click a job to see the details, who's on it, and its activity.
-- **Others** is where anyone can propose a job. An admin approves it (it moves to Jobs) or declines it.
-- **Done** keeps what's been finished.
+- **Others** is where anyone can propose a job (**Propose a job**, on Jobs or Others). An admin approves it (it
+  moves to Jobs) or declines it; declined proposals stay findable, folded away at the bottom of Others.
+- **Done** keeps what's been finished, with cancelled jobs folded away at the bottom.
 - **Pick up** a job to put yourself on it; several people can work on one job. **Mark done** when it's finished,
   or **Drop** it if you can't get to it. Jobs you're on are marked with a green bar.
 - **Up for grabs** and **Mine**, above the list, narrow Jobs to what nobody has picked up yet and to what you're
   on. Search (press `/`) matches titles, people (`@name`) and numbers (`#12`); `n` adds a job.
 
 Admins' changes apply right away. Everyone else's go through the board bot and land within a minute; the page
-shows "Picking up…" and similar until they do.
+shows "Picking up…" and similar until they do, and if the bot can't do it (say, the job was just cancelled), the
+page says why.
 
 Looking needs no account. To make changes from the board, click **Sign in** and paste a GitHub token (the dialog
 links to a token page with the right scope already ticked). The token stays in your browser and is only sent to

@@ -4,6 +4,8 @@ import {
   JOB_LABEL,
   PROPOSAL_LABEL,
   asRecord,
+  failedIds,
+  failureReasons,
   formatBody,
   isPriorityLabel,
   labelNames,
@@ -448,10 +450,11 @@ export function useBoard(auth: Auth): Board {
    * a minute. Show the expected result now, poll GitHub until it's real, then let go.
    */
   const waitForBot = useCallback(
-    (job: Job, label: string, expect: (job: Job) => Job, isDone: (job: Job) => boolean, success: string) => {
+    (job: Job, { label, expect, isDone, success, failure, commandId }: BotWait) => {
       // Its action started before a sign-out (or a sign-in as someone else): nothing to wait for.
       if (api !== currentApi.current) return
       const { key } = job
+      const since = new Date(Date.now() - 60_000).toISOString()
       clearTimeout(timers.current.get(key))
       overlays.current.set(key, expect)
       setPending((p) => ({ ...p, [key]: label }))
@@ -464,13 +467,25 @@ export function useBoard(auth: Auth): Board {
       }
       const poll = async () => {
         let real: RawIssue | null = null
+        let refusal: RawComment | undefined
         try {
           real = await api.get<RawIssue>(`/repos/${job.repo}/issues/${job.number}`)
+          // A command the bot can't carry out gets a reply that names it.
+          const recent = await api.get<RawComment[]>(
+            `/repos/${job.repo}/issues/${job.number}/comments?since=${since}&per_page=100`,
+          )
+          refusal = recent.find((c) => toPerson(c.user).isBot && failedIds(c.body).includes(commandId))
         } catch {
           // try again next round
         }
         if (api !== currentApi.current) return // signed out (or in as someone else) meanwhile
-        if (real && isDone(toJob(real, sourceOf(job)))) {
+        if (refusal) {
+          finish()
+          if (real) putIssue(real, sourceOf(job)) // back to how it really is
+          putNote(job, refusal) // shown with the command, saying why
+          const why = failureReasons(refusal.body).join('; ')
+          toast(why ? `${failure}: ${why}` : `${failure}.`, 'error', 8000)
+        } else if (real && isDone(toJob(real, sourceOf(job)))) {
           finish()
           putIssue(real, sourceOf(job))
           toast(success)
@@ -478,9 +493,9 @@ export function useBoard(auth: Auth): Board {
           finish()
           if (real) putIssue(real, sourceOf(job))
           toast(
-            'The board bot has not caught up yet. Refresh in a minute, or check the Actions tab on GitHub.',
+            'Still waiting for the board bot. Your request is saved on GitHub and applies when the bot runs, so there is no need to try again.',
             'info',
-            8000,
+            9000,
           )
         } else {
           timers.current.set(key, setTimeout(poll, 4000))
@@ -488,7 +503,7 @@ export function useBoard(auth: Auth): Board {
       }
       timers.current.set(key, setTimeout(poll, 6000))
     },
-    [api, putIssue],
+    [api, putIssue, putNote],
   )
 
   const actions = useMemo(
@@ -522,7 +537,19 @@ interface ActionDeps {
   viewer: Viewer | null
   putIssue(raw: RawIssue, where: Source): void
   putNote(job: Job, raw: RawComment): void
-  waitForBot(job: Job, label: string, expect: (j: Job) => Job, isDone: (j: Job) => boolean, success: string): void
+  waitForBot(job: Job, wait: BotWait): void
+}
+
+/** What the board shows while the bot carries out someone's command. */
+interface BotWait {
+  label: string
+  expect(job: Job): Job
+  isDone(job: Job): boolean
+  success: string
+  /** Shown with the bot's reason if it can't do it ("Couldn't pick this up"). */
+  failure: string
+  /** The command's comment, which the bot's answer names. */
+  commandId: number
 }
 
 function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps) {
@@ -531,8 +558,11 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
     return viewer
   }
   const path = (job: Job) => `/repos/${job.repo}/issues/${job.number}`
-  const postComment = async (job: Job, body: string) =>
-    putNote(job, await api.post<RawComment>(`${path(job)}/comments`, { body }))
+  const postComment = async (job: Job, body: string) => {
+    const raw = await api.post<RawComment>(`${path(job)}/comments`, { body })
+    putNote(job, raw)
+    return raw
+  }
   /** For the bot to apply. */
   const command = (job: Job, text: string) => postComment(job, text)
   /** Already applied by the board; kept for the activity feed. */
@@ -637,15 +667,16 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         toast("You're on it")
         return
       }
-      await command(job, '/take')
+      const posted = await command(job, '/take')
       const self: Person = { login: v.login, avatarUrl: v.avatarUrl, url: v.url, isBot: false }
-      waitForBot(
-        job,
-        'Picking up…',
-        (j) => (isOn(j, v.login) ? j : { ...j, assignees: [...j.assignees, self], status: 'active' }),
-        (j) => isOn(j, v.login),
-        "You're on it",
-      )
+      waitForBot(job, {
+        label: 'Picking up…',
+        expect: (j) => (isOn(j, v.login) ? j : { ...j, assignees: [...j.assignees, self], status: 'active' }),
+        isDone: (j) => isOn(j, v.login),
+        success: "You're on it",
+        failure: "Couldn't pick this up",
+        commandId: posted.id,
+      })
     },
 
     async drop(job: Job) {
@@ -656,17 +687,18 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         toast('Dropped. It is up for grabs again.')
         return
       }
-      await command(job, '/drop')
-      waitForBot(
-        job,
-        'Dropping…',
-        (j) => {
+      const posted = await command(job, '/drop')
+      waitForBot(job, {
+        label: 'Dropping…',
+        expect: (j) => {
           const assignees = j.assignees.filter((a) => !sameLogin(a.login, v.login))
           return { ...j, assignees, status: j.status === 'active' && !assignees.length ? 'open' : j.status }
         },
-        (j) => !isOn(j, v.login),
-        'Dropped. It is up for grabs again.',
-      )
+        isDone: (j) => !isOn(j, v.login),
+        success: 'Dropped. It is up for grabs again.',
+        failure: "Couldn't drop this",
+        commandId: posted.id,
+      })
     },
 
     async done(job: Job) {
@@ -677,14 +709,15 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         toast('Marked done 🎉')
         return
       }
-      await command(job, '/done')
-      waitForBot(
-        job,
-        'Marking done…',
-        (j) => ({ ...j, status: 'done', closedAt: j.closedAt ?? new Date().toISOString() }),
-        (j) => j.status === 'done',
-        'Marked done 🎉',
-      )
+      const posted = await command(job, '/done')
+      waitForBot(job, {
+        label: 'Marking done…',
+        expect: (j) => ({ ...j, status: 'done', closedAt: j.closedAt ?? new Date().toISOString() }),
+        isDone: (j) => j.status === 'done',
+        success: 'Marked done 🎉',
+        failure: "Couldn't mark this done",
+        commandId: posted.id,
+      })
     },
 
     async reopen(job: Job) {
@@ -695,14 +728,15 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         toast('Reopened')
         return
       }
-      await command(job, '/reopen')
-      waitForBot(
-        job,
-        'Reopening…',
-        (j) => ({ ...j, status: j.assignees.length ? 'active' : 'open', closedAt: null }),
-        (j) => j.status !== 'done' && j.status !== 'closed',
-        'Reopened',
-      )
+      const posted = await command(job, '/reopen')
+      waitForBot(job, {
+        label: 'Reopening…',
+        expect: (j) => ({ ...j, status: j.assignees.length ? 'active' : 'open', closedAt: null }),
+        isDone: (j) => j.status !== 'done' && j.status !== 'closed',
+        success: 'Reopened',
+        failure: "Couldn't reopen this",
+        commandId: posted.id,
+      })
     },
 
     async setPriority(job: Job, key: PriorityKey) {
@@ -714,14 +748,15 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
         toast(`Priority set to ${key} · ${priorityName(key)}`)
         return
       }
-      await command(job, `/priority ${key}`)
-      waitForBot(
-        job,
-        'Updating…',
-        (j) => ({ ...j, priority: key }),
-        (j) => j.priority === key,
-        'Priority updated',
-      )
+      const posted = await command(job, `/priority ${key}`)
+      waitForBot(job, {
+        label: 'Updating…',
+        expect: (j) => ({ ...j, priority: key }),
+        isDone: (j) => j.priority === key,
+        success: 'Priority updated',
+        failure: "Couldn't change the priority",
+        commandId: posted.id,
+      })
     },
 
     async setDue(job: Job, due: string | null) {
@@ -747,14 +782,15 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       if (input.due !== job.due) await record(job, dueCommand(input.due))
       if (priorityChanged && v.isAdmin) await record(job, `/priority ${input.priority}`)
       if (priorityChanged && !v.isAdmin) {
-        await command(job, `/priority ${input.priority}`)
-        waitForBot(
-          job,
-          'Updating…',
-          (j) => ({ ...j, priority: input.priority }),
-          (j) => j.priority === input.priority,
-          'Saved',
-        )
+        const posted = await command(job, `/priority ${input.priority}`)
+        waitForBot(job, {
+          label: 'Updating…',
+          expect: (j) => ({ ...j, priority: input.priority }),
+          isDone: (j) => j.priority === input.priority,
+          success: 'Saved',
+          failure: "Couldn't change the priority",
+          commandId: posted.id,
+        })
       } else {
         toast('Saved')
       }

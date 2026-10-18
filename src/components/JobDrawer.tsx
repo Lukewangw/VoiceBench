@@ -26,7 +26,16 @@ interface Props {
   loadNotes(job: Job): Promise<void>
   onClose(): void
   onEdit(job: Job): void
-  onSignIn(): void
+  onSignIn(why?: SignInFor): void
+  /** Signed in from this job's Pick up: pick it up now. */
+  resumeTake?: boolean
+  onResumed?(): void
+}
+
+/** Why someone is asked to sign in: to see private jobs, or to pick up a job right after. */
+export interface SignInFor {
+  repo?: boolean
+  take?: string
 }
 
 const STATUS: Record<Job['status'], { label: string; tone: string; icon: IconName }> = {
@@ -37,7 +46,20 @@ const STATUS: Record<Job['status'], { label: string; tone: string; icon: IconNam
   closed: { label: 'Declined', tone: 'gray', icon: 'ban' },
 }
 
-export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes, onClose, onEdit, onSignIn }: Props) {
+export function JobDrawer({
+  job,
+  tab,
+  notes,
+  viewer,
+  pending,
+  actions,
+  loadNotes,
+  onClose,
+  onEdit,
+  onSignIn,
+  resumeTake = false,
+  onResumed,
+}: Props) {
   const [busy, setBusy] = useState<string | null>(null)
   const [declining, setDeclining] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -79,6 +101,14 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
     ;(panel.contains(from) && !from.matches(':disabled') ? from : panel).focus()
   }, [busy])
 
+  // Signed in from Pick up: do what they came for.
+  useEffect(() => {
+    if (!resumeTake || !viewer) return
+    onResumed?.()
+    if ((job.status === 'open' || job.status === 'active') && !isOn(job, viewer.login))
+      void run('take', () => actions.take(job))
+  }, [resumeTake, viewer])
+
   const mine = isOn(job, viewer?.login)
   const isAuthor = !!viewer && sameLogin(viewer.login, job.author.login)
   const editable = actions.canEditDetails(job)
@@ -96,7 +126,7 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
   let primary: ReactNode = null
   if (!viewer) {
     primary = isJob ? (
-      <button className="btn btn-primary" onClick={onSignIn}>
+      <button className="btn btn-primary" onClick={() => onSignIn({ take: job.key })}>
         <Icon name="userPlus" /> Pick up
       </button>
     ) : null
@@ -297,7 +327,14 @@ export function JobDrawer({ job, tab, notes, viewer, pending, actions, loadNotes
                 }}
               />
             ) : (
-              primary
+              <>
+                {primary}
+                {pending && (
+                  <span className="foot-note">
+                    The board bot does this on GitHub, usually within a minute. You can close this meanwhile.
+                  </span>
+                )}
+              </>
             )}
           </div>
         )}

@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react'
 import { NEW_ADMIN_TOKEN_URL, NEW_TOKEN_URL, REPO, REPO_URL } from '../config'
 import { useDialog } from '../lib/useDialog'
+import { GitHubError } from '../lib/github'
 import { errorText, type Viewer } from '../state'
 import { GitHubMark, Icon, Spinner } from './ui'
 
@@ -9,9 +10,11 @@ interface Props {
   onClose(): void
   /** Start from the current choice, so a session-only sign-in doesn't silently become permanent. */
   defaultRemember?: boolean
+  /** Opened to see private jobs: the token needs the repo scope. */
+  forRepo?: boolean
 }
 
-export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
+export function SignIn({ onSignIn, onClose, defaultRemember = true, forRepo = false }: Props) {
   const [token, setToken] = useState('')
   const [busy, setBusy] = useState(false)
   const [remember, setRemember] = useState(defaultRemember)
@@ -28,7 +31,11 @@ export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
       await onSignIn(token, remember)
       onClose()
     } catch (e) {
-      setError(errorText(e))
+      setError(
+        e instanceof GitHubError && e.status === 401
+          ? "GitHub didn't accept that token. Check that you copied all of it (classic tokens start with ghp_), or create a new one."
+          : errorText(e),
+      )
       setBusy(false)
     }
   }
@@ -53,7 +60,7 @@ export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
         >
           <div className="modal-head">
             <h2 id="signin-title">
-              <GitHubMark size={18} /> Connect GitHub
+              <GitHubMark size={18} /> Sign in with GitHub
             </h2>
             <button type="button" className="icon-btn" onClick={onClose} title="Close">
               <Icon name="x" />
@@ -70,29 +77,41 @@ export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
               <div>
                 <div className="step-title">Create a token on GitHub</div>
                 <div className="step-text">
-                  The <code>public_repo</code> scope is already ticked. Pick an expiry, then click{' '}
-                  <em>Generate token</em>.
+                  {forRepo ? (
+                    <>
+                      Private jobs need the <code>repo</code> scope, which reads private repositories. It&apos;s already
+                      ticked. Pick an expiry, then click <em>Generate token</em>.
+                    </>
+                  ) : (
+                    <>
+                      The <code>public_repo</code> scope is already ticked. Pick an expiry, then click{' '}
+                      <em>Generate token</em>.
+                    </>
+                  )}
                 </div>
                 <div className="step-links">
                   <a
                     className="btn btn-outline btn-sm"
-                    href={NEW_TOKEN_URL}
+                    href={forRepo ? NEW_ADMIN_TOKEN_URL : NEW_TOKEN_URL}
                     target="_blank"
                     rel="noreferrer"
                     onClick={() => setTimeout(() => inputRef.current?.focus(), 300)}
                   >
-                    <GitHubMark /> Create token <Icon name="external" size={13} />
+                    <GitHubMark /> {forRepo ? 'Create a token with the repo scope' : 'Create token'}{' '}
+                    <Icon name="external" size={13} />
                   </a>
-                  <a
-                    className="link-btn"
-                    href={NEW_ADMIN_TOKEN_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    title="The repo scope also reads private repositories, which private jobs need"
-                    onClick={() => setTimeout(() => inputRef.current?.focus(), 300)}
-                  >
-                    <Icon name="lock" size={13} /> Admin? Create one that also sees private jobs
-                  </a>
+                  {!forRepo && (
+                    <a
+                      className="link-btn"
+                      href={NEW_ADMIN_TOKEN_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      title="The repo scope also reads private repositories, which private jobs need"
+                      onClick={() => setTimeout(() => inputRef.current?.focus(), 300)}
+                    >
+                      <Icon name="lock" size={13} /> Admin? Create one that also sees private jobs
+                    </a>
+                  )}
                 </div>
               </div>
             </li>
@@ -149,7 +168,7 @@ export function SignIn({ onSignIn, onClose, defaultRemember = true }: Props) {
                 Cancel
               </button>
               <button type="submit" className="btn btn-primary" disabled={busy || !token.trim()}>
-                {busy ? <Spinner /> : <Icon name="check" />} Connect
+                {busy ? <Spinner /> : <Icon name="check" />} Sign in
               </button>
             </div>
           </div>

@@ -3,6 +3,7 @@ import { DEFAULT_PRIORITY, PRIORITIES, priorityLabel, type PriorityKey } from '.
 import { PRIVATE_REPO, PRIVATE_REPO_URL, REPO_URL } from '../config'
 import { dueRelative, todayYmd } from '../lib/format'
 import { useDialog } from '../lib/useDialog'
+import type { SignInFor } from './JobDrawer'
 import type { Job } from '../lib/model'
 import { errorText, type JobInput, type Viewer } from '../state'
 import { GitHubMark, Icon, Spinner } from './ui'
@@ -14,7 +15,7 @@ interface Props {
   canEditDetails: boolean
   onSubmit(input: JobInput): Promise<void>
   onClose(): void
-  onSignIn(): void
+  onSignIn(why?: SignInFor): void
 }
 
 export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSignIn }: Props) {
@@ -199,7 +200,7 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
                   {viewer?.privateAccess === 'needs-scope' ? (
                     <>
                       Private jobs need a token that can read private repositories.{' '}
-                      <button type="button" className="link-btn" onClick={onSignIn}>
+                      <button type="button" className="link-btn" onClick={() => onSignIn({ repo: true })}>
                         Sign in again with the repo scope
                       </button>
                     </>
@@ -235,7 +236,7 @@ export function JobForm({ job, viewer, canEditDetails, onSubmit, onClose, onSign
             {viewer ? (
               <span className="hint">⌘/Ctrl + Enter to {editing ? 'save' : 'submit'}</span>
             ) : (
-              <button type="button" className="link-btn" onClick={onSignIn}>
+              <button type="button" className="link-btn" onClick={() => onSignIn()}>
                 Sign in to post it from here
               </button>
             )}

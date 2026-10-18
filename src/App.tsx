@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Header } from './components/Header'
-import { JobDrawer } from './components/JobDrawer'
+import { JobDrawer, type SignInFor } from './components/JobDrawer'
 import { JobForm } from './components/JobForm'
 import { JobList, Tabs, type Tab } from './components/JobList'
 import { SignIn } from './components/SignIn'
@@ -51,7 +51,10 @@ export function App() {
   const board = useBoard(auth)
   const [route, go, replace] = useRoute()
   const [form, setForm] = useState<{ job?: Job } | null>(null)
-  const [signingIn, setSigningIn] = useState(false)
+  // Why the sign-in dialog is open: to see private jobs (needs the repo scope), or to pick up a job.
+  const [signingIn, setSigningIn] = useState<SignInFor | null>(null)
+  // A job to pick up once signed in (someone clicked Pick up while signed out).
+  const [resume, setResume] = useState<string | null>(null)
   const [refreshing, setRefreshing] = useState(false)
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
@@ -98,9 +101,9 @@ export function App() {
   }, [selected])
 
   const closeDrawer = useCallback(() => go(route.tab), [go, route.tab])
-  const openSignIn = useCallback(() => setSigningIn(true), [])
+  const openSignIn = useCallback((why?: SignInFor) => setSigningIn({ repo: why?.repo, take: why?.take }), [])
   const closeForm = useCallback(() => setForm(null), [])
-  const closeSignIn = useCallback(() => setSigningIn(false), [])
+  const closeSignIn = useCallback(() => setSigningIn(null), [])
 
   const submitForm = async (input: JobInput) => {
     if (form?.job) {
@@ -251,6 +254,8 @@ export function App() {
           onClose={closeDrawer}
           onEdit={(job) => setForm({ job })}
           onSignIn={openSignIn}
+          resumeTake={resume === selected.key}
+          onResumed={() => setResume(null)}
         />
       )}
       {form && (
@@ -268,10 +273,12 @@ export function App() {
           onSignIn={async (token, remember) => {
             const v = await auth.signIn(token, remember)
             toast(`Signed in as @${v.login}${v.isAdmin ? ' · admin' : ''}`)
+            if (signingIn.take) setResume(signingIn.take)
             return v
           }}
           onClose={closeSignIn}
           defaultRemember={auth.remembered}
+          forRepo={signingIn.repo}
         />
       )}
       <Toasts />
