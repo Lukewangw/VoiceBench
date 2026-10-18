@@ -153,6 +153,7 @@ export function App() {
           viewer={viewer}
           syncedAt={board.syncedAt}
           live={board.live}
+          stale={board.jobs.length ? board.error : null}
           refreshing={refreshing}
           onRefresh={refresh}
           onSignIn={openSignIn}

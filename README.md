@@ -122,7 +122,8 @@ pass. Dependabot opens one grouped update a month per ecosystem, checked the sam
 
 - **Tokens** stay in the browser that pasted them (localStorage for this site) and are only sent to
   api.github.com. Anything on the same `<user>.github.io` origin could read them, so don't host untrusted pages
-  there. Signing out removes the token.
+  there. Signing out removes the token (in every open tab of the board), and so does GitHub rejecting it
+  (expired or revoked): the board then says so instead of quietly going stale.
 - **Content Security Policy**: the published page runs only its own scripts, connects only to api.github.com and
   shows images only from GitHub.
 - **Issue text is untrusted**: it is rendered from Markdown and sanitized; it can't run scripts, add form fields

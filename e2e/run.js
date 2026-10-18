@@ -206,6 +206,8 @@ async function main() {
     const body = req.postData() ? JSON.parse(req.postData()) : {}
     const base = `/repos/${REPO}`
     let m
+    // A token GitHub doesn't know (revoked, expired) gets nothing.
+    if (token && !who) return respond(route, 401, { message: 'Bad credentials' })
 
     if (path === '/user')
       return who
@@ -223,12 +225,26 @@ async function main() {
           private: P.isPrivate,
           permissions: { admin: true, push: true, pull: true },
         })
-      if (path === `${pbase}/issues` && method === 'GET')
+      if (path === `${pbase}/issues` && method === 'GET') {
+        if (P.delay) await sleep(P.delay)
+        const state = url.searchParams.get('state') ?? 'open'
         return respond(
           route,
           200,
-          [...P.issues].sort((a, b) => b.number - a.number),
+          P.issues.filter((i) => state === 'all' || i.state === state).sort((a, b) => b.number - a.number),
         )
+      }
+      if ((m = path.match(new RegExp(`^${pbase}/issues/(\\d+)/labels(?:/([^/]+))?$`)))) {
+        const i = pissue(m[1])
+        if (method === 'POST')
+          for (const name of body.labels) if (!i.labels.some((l) => l.name === name)) i.labels.push({ name })
+        if (method === 'DELETE') {
+          const name = decodeURIComponent(m[2] ?? '')
+          if (!i.labels.some((l) => l.name === name)) return respond(route, 404, { message: 'Label does not exist' })
+          i.labels = i.labels.filter((l) => l.name !== name)
+        }
+        return respond(route, 200, i.labels)
+      }
       if (path === `${pbase}/issues` && method === 'POST') {
         const i = {
           number: P.next++,
@@ -290,8 +306,12 @@ async function main() {
         permissions: { admin, maintain: admin, push: admin, triage: admin, pull: true },
       })
     if (path === `${base}/issues` && method === 'GET') {
+      if (S.listsFail) return respond(route, 502, { message: 'Server Error' })
       // Like GitHub, lists take a few seconds to include new issues.
-      const visible = S.issues.filter((i) => !i.listedAfter || Date.now() >= i.listedAfter)
+      const state = url.searchParams.get('state') ?? 'open'
+      const visible = S.issues.filter(
+        (i) => (!i.listedAfter || Date.now() >= i.listedAfter) && (state === 'all' || i.state === state),
+      )
       return respond(
         route,
         200,
@@ -340,6 +360,27 @@ async function main() {
         }
         return respond(route, 200, i)
       }
+    }
+    if ((m = path.match(new RegExp(`^${base}/issues/(\\d+)/labels(?:/([^/]+))?$`)))) {
+      const i = issue(m[1])
+      if (!i) return respond(route, 404, { message: 'Not Found' })
+      if (!admin) return respond(route, 403, { message: 'Must have admin rights to Repository.' })
+      if (method === 'POST') {
+        for (const name of body.labels) {
+          if (i.labels.some((l) => l.name === name)) continue
+          i.labels.push({ name })
+          S.events.push({ issue: i.number, event: 'labeled', label: { name }, actor: { login: who } })
+          fireBot(i.number, (bot) => bot.keepOnePriority(name))
+        }
+      }
+      if (method === 'DELETE') {
+        const name = decodeURIComponent(m[2] ?? '')
+        if (!i.labels.some((l) => l.name.toLowerCase() === name.toLowerCase()))
+          return respond(route, 404, { message: 'Label does not exist' })
+        i.labels = i.labels.filter((l) => l.name.toLowerCase() !== name.toLowerCase())
+      }
+      i.updated_at = now()
+      return respond(route, 200, i.labels)
     }
     if ((m = path.match(new RegExp(`^${base}/issues/(\\d+)/comments$`)))) {
       const i = issue(m[1])
@@ -942,12 +983,18 @@ async function main() {
   )
   step('members never load private jobs, not even from a direct link')
 
+  P.delay = 2500 // the next private list takes a while
+  await admin2.click('header .sync')
+  await sleep(300)
   await admin2.click('.me')
   await admin2.click('.menu-item:has-text("Sign out")')
   await admin2.waitForSelector('.toast:has-text("Signed out")')
   await sleep(300)
   assert.equal(await admin2.locator(`.row:has-text("${PRIVATE_TITLE}")`).count(), 0)
-  step('signing out hides private jobs right away')
+  await sleep(3500) // the slow list lands
+  P.delay = 0
+  assert.equal(await admin2.locator(`.row:has-text("${PRIVATE_TITLE}")`).count(), 0, 'and stay hidden')
+  step('signing out hides private jobs right away, even with a refresh still on its way')
 
   // ---------------- Phone ----------------
   console.log('Phone layout')
@@ -996,6 +1043,69 @@ async function main() {
     'icon-only Approve buttons still have a name',
   )
   step('phone screens: list, job, sign-in and form fit without sideways scrolling; icon buttons keep names')
+
+  // ---------------- Sessions and stale copies ----------------
+  console.log('Sessions and stale copies')
+  const tabA = await newPage()
+  await tabA.goto(BASE + '#/others')
+  await tabA.click('header >> text=Sign in')
+  // Pasted with invisible characters around it, as chat apps do.
+  await tabA.fill('.modal input[type=password]', '\u200b admin-token\ufeff ')
+  await tabA.click('.modal button:has-text("Connect")')
+  await tabA.waitForSelector('.badge-admin')
+  await tabA.goto(BASE + '#/others/7')
+  await tabA.waitForSelector('.drawer .prio-opt')
+  // Meanwhile another admin approves #7 (this tab's copy still says proposal), then this one sets P3.
+  issue(7).labels = [{ name: 'job' }, { name: 'P1' }]
+  await tabA.click('.prio-opt:has-text("P3")')
+  await until(() => labels(7).includes('P3'), 'priority on #7')
+  await Promise.all(S.botRuns)
+  assert.deepEqual(labels(7), ['P3', 'job'], "the other admin's approval stays")
+  step('a pasted token with invisible characters works; a stale copy never undoes someone else’s label change')
+
+  const tabB = await tabA.context().newPage()
+  await tabB.goto(BASE + '#/jobs')
+  await tabB.waitForSelector('.badge-admin')
+  await tabA.keyboard.press('Escape')
+  await tabA.waitForSelector('.drawer', { state: 'detached' })
+  await tabA.click('.me')
+  await tabA.click('.menu-item:has-text("Sign out")')
+  await tabB.waitForSelector('header button:has-text("Sign in")')
+  step('signing out in one tab signs out the other tabs too')
+
+  S.listsFail = true
+  const lists = await newPage()
+  await lists.goto(BASE + '#/jobs')
+  await lists.click('header >> text=Sign in')
+  await lists.fill('.modal input[type=password]', 'member-token')
+  await lists.click('.modal button:has-text("Connect")')
+  await lists.waitForSelector('.toast-error')
+  await lists.waitForSelector('header .sync-stale:has-text("Couldn\'t refresh")')
+  S.listsFail = false
+  await lists.click('header .sync')
+  await lists.waitForSelector('header .sync:not(.sync-stale):has-text("Live")')
+  step('the header says so when refreshing fails, and recovers')
+
+  TOKENS['short-lived-token'] = 'sam'
+  SCOPES['short-lived-token'] = 'public_repo'
+  const revoked = await newPage()
+  await revoked.goto(BASE + '#/jobs')
+  await revoked.click('header >> text=Sign in')
+  await revoked.fill('.modal input[type=password]', 'short-lived-token')
+  await revoked.click('.modal button:has-text("Connect")')
+  await revoked.waitForSelector('.toast:has-text("Signed in as @sam")')
+  await revoked.goto(BASE + '#/jobs/4')
+  await revoked.click('.drawer-foot button:has-text("Pick up")')
+  await revoked.waitForSelector('.row-pending')
+  await revoked.keyboard.press('Escape')
+  delete TOKENS['short-lived-token'] // revoked on GitHub
+  await revoked.click('header .sync')
+  await revoked.waitForSelector('.toast:has-text("no longer accepts your token")')
+  await revoked.waitForSelector('header button:has-text("Sign in")')
+  await sleep(7000) // the pending pick-up would have polled by now
+  assert.equal(await revoked.locator('.toast:has-text("You\'re on it")').count(), 0, 'no stale success message')
+  assert.equal(await revoked.locator('.row-pending').count(), 0, 'nothing left pending')
+  step('a revoked token signs out with a notice; pending work from before is called off')
 
   await Promise.all(S.botRuns)
   const confused = S.comments.filter((c) => c.reactions?.confused && c.id > 5000)

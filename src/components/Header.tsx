@@ -8,20 +8,28 @@ interface Props {
   viewer: Viewer | null
   syncedAt: string | null
   live: boolean
+  /** Why the last refresh failed, if it did. */
+  stale?: string | null
   refreshing: boolean
   onRefresh(): void
   onSignIn(): void
   onSignOut(): void
 }
 
-export function Header({ viewer, syncedAt, live, refreshing, onRefresh, onSignIn, onSignOut }: Props) {
+export function Header({ viewer, syncedAt, live, stale, refreshing, onRefresh, onSignIn, onSignOut }: Props) {
   const [, tick] = useState(0)
   useEffect(() => {
     const id = setInterval(() => tick((n) => n + 1), 30_000)
     return () => clearInterval(id)
   }, [])
 
-  const status = !syncedAt ? 'Loading…' : live ? `Live · ${timeAgo(syncedAt)}` : `Updated ${timeAgo(syncedAt)}`
+  const status = !syncedAt
+    ? 'Loading…'
+    : stale
+      ? `Couldn't refresh · ${timeAgo(syncedAt)}`
+      : live
+        ? `Live · ${timeAgo(syncedAt)}`
+        : `Updated ${timeAgo(syncedAt)}`
 
   return (
     <header className="topbar">
@@ -35,9 +43,9 @@ export function Header({ viewer, syncedAt, live, refreshing, onRefresh, onSignIn
         </a>
         <div className="topbar-right">
           <button
-            className="sync"
+            className={`sync${stale ? ' sync-stale' : ''}`}
             onClick={onRefresh}
-            title={live ? 'Reading GitHub directly. Refresh now' : 'Refresh'}
+            title={stale ? `${stale} Try again` : live ? 'Reading GitHub directly. Refresh now' : 'Refresh'}
           >
             <Icon name="refresh" className={refreshing ? 'spin' : undefined} />
             <span className="sync-text">{status}</span>

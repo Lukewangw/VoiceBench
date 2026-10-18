@@ -252,6 +252,10 @@ button {
   background: var(--surface-hover);
   color: var(--text-2);
 }
+.sync-stale,
+.sync-stale:hover {
+  color: var(--amber);
+}
 
 .spin {
   animation: spin 0.8s linear infinite;

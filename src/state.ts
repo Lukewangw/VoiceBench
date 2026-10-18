@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   DEFAULT_PRIORITY,
   JOB_LABEL,
@@ -60,6 +60,8 @@ export interface Auth {
   /** `remember: false` keeps the token only until the tab closes. */
   signIn(token: string, remember?: boolean): Promise<Viewer>
   signOut(): void
+  /** GitHub stopped accepting the token: sign out and say so (once). */
+  expire(): void
 }
 
 async function whoIs(token: string): Promise<Viewer> {
@@ -104,9 +106,12 @@ export function useAuth(): Auth {
   const [token, setToken] = useState(() => tokenStore()?.get(TOKEN_KEY) ?? null)
   const [viewer, setViewer] = useState<Viewer | null>(savedViewer)
   const checked = useRef<string | null>(null)
+  const current = useRef(token)
+  current.current = token
 
   const signOut = useCallback(() => {
     checked.current = null
+    current.current = null
     for (const store of [storage, sessionStore]) {
       store.remove(TOKEN_KEY)
       store.remove(VIEWER_KEY)
@@ -114,6 +119,12 @@ export function useAuth(): Auth {
     setToken(null)
     setViewer(null)
   }, [])
+
+  const expire = useCallback(() => {
+    if (!current.current) return
+    signOut()
+    toast('GitHub no longer accepts your token (it may have expired). Sign in again to make changes.', 'info', 8000)
+  }, [signOut])
 
   // A saved token may have expired, or admin rights may have changed since last time. The answer
   // only counts if that token is still the one in use (nobody signed in or out meanwhile).
@@ -128,17 +139,34 @@ export function useAuth(): Auth {
       })
       .catch((e) => {
         if (checked.current !== token) return
-        if (e instanceof GitHubError && e.status === 401) {
-          signOut()
-          toast('Your GitHub token expired. Sign in again to make changes.', 'info')
-        }
+        if (e instanceof GitHubError && e.status === 401) expire()
       })
-  }, [token, signOut])
+  }, [token, expire])
+
+  // Signing in or out in another tab of the board applies here too (sessions kept for one tab
+  // only are that tab's own).
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== null && e.key !== TOKEN_KEY) return
+      const next = tokenStore()?.get(TOKEN_KEY) ?? null
+      if (next === current.current) return
+      checked.current = null
+      current.current = next
+      setToken(next)
+      setViewer(savedViewer())
+    }
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  }, [])
 
   const signIn = useCallback(async (raw: string, remember = true) => {
-    const t = raw.trim()
+    // Pasted tokens often bring spaces or invisible characters along (from chat apps and docs).
+    const t = raw.replace(/[\s\u200B-\u200D\u2060\uFEFF]/g, '')
+    if (!/^[\x21-\x7e]+$/.test(t))
+      throw new GitHubError("That doesn't look like a GitHub token. Copy it again from GitHub.", 0)
     const v = await whoIs(t)
     checked.current = t
+    current.current = t
     for (const store of [storage, sessionStore]) {
       store.remove(TOKEN_KEY)
       store.remove(VIEWER_KEY)
@@ -153,7 +181,7 @@ export function useAuth(): Auth {
 
   // Session-only sign-ins stay session-only when someone signs in again from inside the board.
   const remembered = tokenStore() !== sessionStore
-  return { token, viewer, remembered, signIn, signOut }
+  return { token, viewer, remembered, signIn, signOut, expire }
 }
 
 // ---------------------------------------------------------------------------
@@ -214,7 +242,7 @@ const publicOnly = <T>(m: Record<string, T>) =>
   Object.fromEntries(Object.entries(m).filter(([k]) => !k.startsWith('p')))
 
 export function useBoard(auth: Auth): Board {
-  const { token, viewer } = auth
+  const { token, viewer, expire } = auth
   const seesPrivate = !!viewer?.isAdmin && viewer.privateAccess === 'yes'
   const api = useMemo(() => createClient(token), [token])
   const [jobMap, setJobMap] = useState<Record<string, Job>>({})
@@ -231,6 +259,19 @@ export function useBoard(auth: Auth): Board {
   const lastSync = useRef(0)
   useEffect(() => () => timers.current.forEach(clearTimeout), [])
 
+  // Bumped whenever who is signed in, or what they may see, changes. Requests still on their way
+  // for the previous session are dropped when they land, and its pending work is called off.
+  const generation = useRef(0)
+  const privateOk = useRef(seesPrivate)
+  useLayoutEffect(() => {
+    privateOk.current = seesPrivate
+    if (generation.current++ === 0) return
+    timers.current.forEach(clearTimeout)
+    timers.current.clear()
+    overlays.current.clear()
+    setPending({})
+  }, [token, seesPrivate])
+
   // Jobs this browser just changed. GitHub's issue lists take a few seconds to catch up with a
   // write, so a refresh in that window could briefly undo it on screen; the written copy wins
   // until the list has it.
@@ -238,6 +279,8 @@ export function useBoard(auth: Auth): Board {
 
   const withOverlay = (job: Job) => overlays.current.get(job.key)?.(job) ?? job
   const putIssue = useCallback((raw: RawIssue, where: Source) => {
+    // An admin's action can land after they signed out: private jobs only ever show while allowed.
+    if (where.private && !privateOk.current) return
     const job = toJob(raw, where)
     written.current.set(job.key, { job, at: Date.now() })
     setJobMap((m) => ({ ...m, [job.key]: withOverlay(job) }))
@@ -252,13 +295,16 @@ export function useBoard(auth: Auth): Board {
     return loaded
   }
   const putNote = useCallback((job: Job, raw: RawComment) => {
+    if (job.private && !privateOk.current) return
     const note = toNote({ ...raw, issue_number: job.number })
     setNotes((m) => ({ ...m, [job.key]: [...(m[job.key] ?? []).filter((n) => n.id !== note.id), note] }))
   }, [])
 
   const loadSnapshot = useCallback(async () => {
+    const gen = generation.current
     const snap = await fetchSnapshot()
     if (!snap) return false
+    if (gen !== generation.current) return true // signed in or out meanwhile: that load takes over
     let jobs: Record<string, Job>
     const grouped: Record<string, Note[]> = {}
     try {
@@ -267,27 +313,35 @@ export function useBoard(auth: Auth): Board {
     } catch {
       return false // a damaged snapshot: read GitHub directly instead
     }
-    // Keep private jobs an admin already loaded; the snapshot only ever has public ones.
-    setJobMap((m) => settle({ ...jobs, ...privateOnly(m) }))
-    setNotes((m) => ({ ...grouped, ...privateOnly(m) }))
+    // The snapshot only has public jobs: keep private ones an admin loaded (while they may see them).
+    const keepPrivate = <T>(m: Record<string, T>) => (privateOk.current ? privateOnly(m) : {})
+    setJobMap((m) => settle({ ...jobs, ...keepPrivate(m) }))
+    setNotes((m) => ({ ...grouped, ...keepPrivate(m) }))
     setSource('snapshot')
     setSyncedAt(snap.generatedAt)
     return true
   }, [])
 
   const loadFromGitHub = useCallback(async () => {
-    const publicJobs = issuesOf(await api.paginate<RawIssue>(`/repos/${REPO}/issues?state=all&per_page=100`), PUBLIC)
+    const gen = generation.current
+    // Every open issue, and the most recently updated closed ones (Done shows the newest first).
+    const listIssues = async (repo: string) => {
+      const [open, closed] = await Promise.all([
+        api.paginate<RawIssue>(`/repos/${repo}/issues?state=open&per_page=100`, 50),
+        api.paginate<RawIssue>(`/repos/${repo}/issues?state=closed&sort=updated&direction=desc&per_page=100`, 10),
+      ])
+      return [...open, ...closed]
+    }
+    const publicJobs = issuesOf(await listIssues(REPO), PUBLIC)
     let privateJobs: Job[] | null = []
     if (seesPrivate) {
       try {
-        privateJobs = issuesOf(
-          await api.paginate<RawIssue>(`/repos/${PRIVATE_REPO}/issues?state=all&per_page=100`),
-          PRIVATE,
-        )
+        privateJobs = issuesOf(await listIssues(PRIVATE_REPO), PRIVATE)
       } catch {
         privateJobs = null // keep the private jobs we had rather than blanking them on a hiccup
       }
     }
+    if (gen !== generation.current) return // signed in or out meanwhile
     setJobMap((m) =>
       settle({
         ...byKey(publicJobs.map(withOverlay)),
@@ -300,18 +354,22 @@ export function useBoard(auth: Auth): Board {
 
   const refresh = useCallback(
     async (manual = false) => {
+      const gen = generation.current
       lastSync.current = Date.now()
       try {
         if (token) await loadFromGitHub()
         else if (!(await loadSnapshot())) await loadFromGitHub()
+        if (gen !== generation.current) return
         setError(null)
         if (manual) toast('Up to date', 'info', 1800)
       } catch (e) {
+        if (gen !== generation.current) return
+        if (token && e instanceof GitHubError && e.status === 401) return expire()
         if (manual) toast(errorText(e), 'error')
         setError((prev) => prev ?? errorText(e))
       }
     },
-    [token, loadFromGitHub, loadSnapshot],
+    [token, loadFromGitHub, loadSnapshot, expire],
   )
 
   // First load, and again whenever someone signs in or out.
@@ -327,10 +385,13 @@ export function useBoard(auth: Auth): Board {
       if (cancelled) return
       try {
         if (token || !hadSnapshot) await loadFromGitHub()
-        setError(null)
+        if (!cancelled) setError(null)
       } catch (e) {
+        if (cancelled) return
+        if (token && e instanceof GitHubError && e.status === 401) return expire()
+        // With the snapshot on screen this is a hiccup (the header says so), otherwise a dead end.
         if (hadSnapshot) toast(errorText(e), 'error')
-        else setError(errorText(e))
+        setError(errorText(e))
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -338,7 +399,7 @@ export function useBoard(auth: Auth): Board {
     return () => {
       cancelled = true
     }
-  }, [token, loadSnapshot, loadFromGitHub])
+  }, [token, loadSnapshot, loadFromGitHub, expire])
 
   // Stay fresh: every minute while the tab is visible, and when coming back to the tab.
   useEffect(() => {
@@ -355,8 +416,10 @@ export function useBoard(auth: Auth): Board {
   const loadNotes = useCallback(
     async (job: Job) => {
       if (!token && source === 'snapshot') return
+      const gen = generation.current
       try {
-        const raw = await api.paginate<RawComment>(`/repos/${job.repo}/issues/${job.number}/comments?per_page=100`, 5)
+        const raw = await api.paginateLast<RawComment>(`/repos/${job.repo}/issues/${job.number}/comments?per_page=100`)
+        if (gen !== generation.current || (job.private && !privateOk.current)) return
         setNotes((m) => ({ ...m, [job.key]: raw.map((c) => toNote({ ...c, issue_number: job.number })) }))
       } catch {
         // keep whatever we already have
@@ -372,6 +435,7 @@ export function useBoard(auth: Auth): Board {
   const waitForBot = useCallback(
     (job: Job, label: string, expect: (job: Job) => Job, isDone: (job: Job) => boolean, success: string) => {
       const { key } = job
+      const gen = generation.current
       clearTimeout(timers.current.get(key))
       overlays.current.set(key, expect)
       setPending((p) => ({ ...p, [key]: label }))
@@ -389,6 +453,7 @@ export function useBoard(auth: Auth): Board {
         } catch {
           // try again next round
         }
+        if (gen !== generation.current) return // signed out (or in as someone else) meanwhile
         if (real && isDone(toJob(real, sourceOf(job)))) {
           finish()
           putIssue(real, sourceOf(job))
@@ -457,7 +522,24 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
   /** Already applied by the board; kept for the activity feed. */
   const record = (job: Job, text: string) => postComment(job, asRecord(text))
   const update = async (job: Job, patch: object) => putIssue(await api.patch<RawIssue>(path(job), patch), sourceOf(job))
-  const priorityLabels = (job: Job, key: PriorityKey) => [...job.labels.filter((l) => !isPriorityLabel(l)), key]
+  /**
+   * Adds and removes labels one at a time instead of rewriting the whole set from our copy, which
+   * can be a minute old: a change someone else made meanwhile (an approval, a priority) stays.
+   */
+  const relabel = async (job: Job, add: string[], remove: string[], patch?: object) => {
+    if (patch) await api.patch(path(job), patch)
+    if (add.length) await api.post(`${path(job)}/labels`, { labels: add })
+    for (const name of remove) {
+      try {
+        await api.del(`${path(job)}/labels/${encodeURIComponent(name)}`)
+      } catch (e) {
+        if (!(e instanceof GitHubError && e.status === 404)) throw e // already gone
+      }
+    }
+    putIssue(await api.get<RawIssue>(path(job)), sourceOf(job))
+  }
+  const otherPriorities = (job: Job, key: PriorityKey) =>
+    job.labels.filter((l) => isPriorityLabel(l) && l.toUpperCase() !== key)
   const dueCommand = (due: string | null) => (due ? `/due ${due}` : '/due none')
 
   return {
@@ -496,9 +578,8 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
 
     async approve(job: Job) {
       me()
-      const labels = job.labels.filter((l) => l.toLowerCase() !== PROPOSAL_LABEL).concat(JOB_LABEL)
-      if (!labels.some(isPriorityLabel)) labels.push(job.priority ?? DEFAULT_PRIORITY)
-      await update(job, { labels, ...(job.status === 'closed' ? { state: 'open' } : {}) })
+      const add = [JOB_LABEL, ...(job.labels.some(isPriorityLabel) ? [] : [job.priority ?? DEFAULT_PRIORITY])]
+      await relabel(job, add, [PROPOSAL_LABEL], job.status === 'closed' ? { state: 'open' } : undefined)
       await record(job, '/approve')
       toast('Approved. It is on the board now.')
     },
@@ -591,7 +672,7 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       const v = me()
       if (job.priority === key) return
       if (v.isAdmin) {
-        await update(job, { labels: priorityLabels(job, key) })
+        await relabel(job, [key], otherPriorities(job, key))
         await record(job, `/priority ${key}`)
         toast(`Priority set to ${key} · ${priorityName(key)}`)
         return
@@ -623,9 +704,8 @@ function makeActions({ api, viewer, putIssue, putNote, waitForBot }: ActionDeps)
       const unfiled = !priorityFromLabels(job.labels) && parseBody(job.body).hasPriority
       const body = updateBody(job.body, unfiled ? { ...fields, priority: input.priority } : fields)
       const priorityChanged = input.priority !== job.priority
-      const patch: Record<string, unknown> = { title: input.title.trim(), body }
-      if (priorityChanged && v.isAdmin) patch.labels = priorityLabels(job, input.priority)
-      await update(job, patch)
+      await update(job, { title: input.title.trim(), body })
+      if (priorityChanged && v.isAdmin) await relabel(job, [input.priority], otherPriorities(job, input.priority))
 
       if (input.due !== job.due) await record(job, dueCommand(input.due))
       if (priorityChanged && v.isAdmin) await record(job, `/priority ${input.priority}`)

@@ -95,7 +95,10 @@ export function createClient(token: string | null) {
         // Revalidate instead of trusting the browser cache, so changes show up right away.
         cache: 'no-cache',
       })
-    } catch {
+    } catch (error) {
+      // A header the browser won't send (a token with characters no token has) is not a network problem.
+      if (error instanceof TypeError && /header|ByteString|ISO-8859-1/i.test(error.message))
+        throw new GitHubError('That token has characters GitHub tokens never have. Copy it again from GitHub.', 0)
       throw new GitHubError("Couldn't reach GitHub. Check your connection.", 0)
     }
     if (!res.ok) throw await toError(res)
@@ -118,6 +121,21 @@ export function createClient(token: string | null) {
         next = /<([^>]+)>;\s*rel="next"/.exec(headers.get('link') ?? '')?.[1] ?? null
       }
       return all
+    },
+    /** The last `maxPages` pages of a list: GitHub lists comments oldest first, and the newest matter most. */
+    async paginateLast<T>(path: string, maxPages = 5): Promise<T[]> {
+      const { data, headers } = await request<T[]>('GET', path)
+      const lastUrl = /<([^>]+)>;\s*rel="last"/.exec(headers.get('link') ?? '')?.[1]
+      const last = lastUrl ? Number(new URL(lastUrl).searchParams.get('page')) || 1 : 1
+      const first = Math.max(1, last - maxPages + 1)
+      const urls: string[] = []
+      for (let page = Math.max(2, first); page <= last; page++) {
+        const url = new URL(lastUrl!)
+        url.searchParams.set('page', String(page))
+        urls.push(url.toString())
+      }
+      const rest = await Promise.all(urls.map(async (url) => (await request<T[]>('GET', url)).data))
+      return [...(first === 1 ? data : []), ...rest.flat()]
     },
   }
 }
