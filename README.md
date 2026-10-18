@@ -82,8 +82,8 @@ Every job is an issue in this repository, so everything also works from GitHub:
 - **Data**: GitHub Issues. The `job` label means approved, `proposal` means waiting in Others, and `P0`–`P3`
   is the priority. The due date lives in the issue body, under "Due date"; the board and the bot only ever
   change that answer (or drop the form's Priority answer once it is a label) and leave all other text as written.
-- **Bot**: [`.github/workflows/board.yml`](.github/workflows/board.yml) runs on every issue and comment event,
-  with the newest commit whose tests passed (so does publishing).
+- **Bot**: [`.github/workflows/board.yml`](.github/workflows/board.yml) runs on every issue and comment event
+  (and every 6 hours), always with the newest commit pushed to `main` whose tests passed (so does publishing).
   [`.github/scripts/triage.js`](.github/scripts/triage.js) files new issues and applies commands, then the site
   is rebuilt and published to GitHub Pages with a fresh snapshot of all issues
   ([`snapshot.js`](.github/scripts/snapshot.js)), so the page loads instantly for everyone.
@@ -96,7 +96,8 @@ Every job is an issue in this repository, so everything also works from GitHub:
 ### One-time setup
 
 1. Settings → Pages → Build and deployment → Source: **GitHub Actions**.
-2. Actions → **Board** → **Run workflow** (or open any issue) to publish the first version.
+2. Actions → **Board** → **Run workflow** to test and publish the first version. (Until one run's tests have
+   passed, issue events have no tested code to run, and say so in the Actions tab.)
 3. Add your admins as collaborators.
 
 ### Development
@@ -126,8 +127,9 @@ pass. Dependabot opens one grouped update a month per ecosystem, checked the sam
   (expired or revoked): the board then says so instead of quietly going stale.
 - **Content Security Policy**: the published page runs only its own scripts, connects only to api.github.com and
   shows images only from GitHub.
-- **Issue text is untrusted**: it is rendered from Markdown and sanitized; it can't run scripts, add form fields
-  (other than read-only task-list boxes), styles, classes or ids.
+- **Issue text is untrusted**: it is rendered from Markdown and sanitized; it can't run scripts, draw over the
+  page (no SVG or MathML), add form fields (other than read-only task-list boxes), styles, classes or ids, and its
+  links open in a new tab. Parsing it takes linear time, so no issue can stall the board.
 - **Private jobs** live only in the private repository. The published site and its `data.json` contain public
   issues only; private jobs are fetched by an admin's browser with the admin's own token, and only when that
   repository reports itself as private.
